@@ -4,6 +4,7 @@ import sys
 import os
 import argparse
 import pprint
+import time
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -15,6 +16,9 @@ def parse_arguments():
     return parser.parse_args()
 
 epoch_one_day = 86400
+current_epoch = time.time()
+
+print(current_epoch)
 
 def walk_dirs(data={}):
     for root, dirs, files in os.walk(data["path"]):
@@ -28,8 +32,9 @@ def walk_dirs(data={}):
                 try:
                     mtime = os.path.getmtime(full_file_path)
                     mtime_days = mtime / 86400
-                    # print(full_file_path + '   ---   ' + str(mtime_days) + '   days')
-                    if mtime <  86400 * 30:
+                    # print(full_file_path + '   ---   ' + str(mtime) )#+ '   days')
+                    days_old = ((current_epoch - mtime) / 86400)
+                    if days_old < 30:
                         data["old"] = False
                         break
                 except Exception as e:
