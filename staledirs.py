@@ -25,19 +25,25 @@ def walk_dirs(data={}):
             
             for t_file in tmp_file_list:
                 full_file_path = root + '/' + t_file
-                mtime = os.path.getmtime(full_file_path)
-                mtime_days = mtime / 86400
-                # print(full_file_path + '   ---   ' + str(mtime_days) + '   days')
-                if mtime <  86400 * 30:
-                    data["old"] = False
-                    break
-                data["old"] = True
-                
+                try:
+                    mtime = os.path.getmtime(full_file_path)
+                    mtime_days = mtime / 86400
+                    # print(full_file_path + '   ---   ' + str(mtime_days) + '   days')
+                    if mtime <  86400 * 30:
+                        data["old"] = False
+                        break
+                except Exception as e:
+                    # print(e)
+                    pass
+            
+            # if dang == True:
+            #     data["old"] = True
 
         for d in dirs: 
             tmp_dict = {}
             tmp_dict["path"] = os.path.join(root, d)
-            tmp_dict["old"] = False
+            # tmp_dict["old"] = False
+            data["old"] = True
             walk_dirs(tmp_dict)
             list_of_dirs.append(tmp_dict)
 
