@@ -10,8 +10,8 @@ pp = pprint.PrettyPrinter(indent=4)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Find stale dirs")
-    parser.add_argument('path', metavar='/filesysem/path', help='path')
-    parser.add_argument('days_old', action='store', type=int, help='how old do you want to check')
+    parser.add_argument('path', metavar='/filesysem/path', help='Filesystem path')
+    parser.add_argument('days_old', action='store', type=int, help='How many days old do the files have to be')
 
     return parser.parse_args()
 
