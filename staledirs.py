@@ -48,14 +48,12 @@ def walk_dirs(days_old, data={}):
             for d in dirs:
                 tmp_dict = {}
                 tmp_dict["path"] = os.path.join(root, d)
-            
+                tmp_dict["old"] = True
+
                 walk_dirs(days_old, tmp_dict)
 
-                try:
-                    if not tmp_dict["old"]:
-                        data["old"] = False
-                except Exception as e:
-                    print(e)
+                if not tmp_dict["old"]:
+                    data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
