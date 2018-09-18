@@ -51,7 +51,7 @@ def walk_dirs(days_old, data={}):
             
                 walk_dirs(days_old, tmp_dict)
 
-                if not tmp_dict["old"]:
+                if tmp_dict["old"] == False:
                     data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
