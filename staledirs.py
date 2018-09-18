@@ -49,6 +49,7 @@ def walk_dirs(days_old, data={}):
                 tmp_dict = {}
                 tmp_dict["path"] = os.path.join(root, d)
                 tmp_dict["old"] = True
+                tmp_dict["dirs"] = []
 
                 walk_dirs(days_old, tmp_dict)
 
