@@ -18,15 +18,21 @@ def parse_arguments():
 epoch_one_day = 86400
 current_epoch = time.time()
 
-
 def walk_dirs(days_old, data={}):
     for root, dirs, files in os.walk(data["path"]):
+
         list_of_dirs = []
+        data["old"] = True
+        data["dirs"] = []
+
+        if not files and not dirs:
+            data["old"] = False
+            return
 
         if files:
             tmp_file_list = files
             for t_file in tmp_file_list:
-                full_file_path = root + '/' + t_file
+                full_file_path = os.path.join(root, t_file)
                 try:
                     mtime = os.path.getmtime(full_file_path)
                     # print(full_file_path + '   ---   ' + str(mtime) )#+ '   days')
@@ -37,19 +43,29 @@ def walk_dirs(days_old, data={}):
                 except Exception as e:
                     # print(e)
                     pass
-                data["old"] = True
 
-        for d in dirs: 
-            tmp_dict = {}
-            tmp_dict["path"] = os.path.join(root, d)
-            # tmp_dict["old"] = False
-        
-            walk_dirs(days_old, tmp_dict)
-            list_of_dirs.append(tmp_dict)
+        if dirs:
+            for d in dirs:
+                tmp_dict = {}
+                tmp_dict["path"] = os.path.join(root, d)
+            
+                walk_dirs(days_old, tmp_dict)
 
-            data["dirs"] = list_of_dirs
+                if not tmp_dict["old"]:
+                    data["old"] = False
+                    
+                list_of_dirs.append(tmp_dict)
+                data["dirs"] = list_of_dirs
 
         break
+
+def print_path(data):
+    if data["old"]:
+        print(data["path"])
+
+    for d in data["dirs"]:
+        print_path(d)
+
 
 def main():
     args = parse_arguments() #Parse arguments
@@ -57,18 +73,13 @@ def main():
     og_path = args.path
     days_old = args.days_old
 
-
     data = {}
     data["path"] = og_path
 
     walk_dirs(days_old, data)
 
-    pp.pprint(data)
-
-
-
+    print_path(data)
 
    
-
 if __name__ == "__main__":
     main()
