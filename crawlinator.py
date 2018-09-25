@@ -18,7 +18,8 @@ def parse_arguments():
 epoch_one_day = 86400
 current_epoch = time.time()
 
-def walk_dirs(data={}):
+
+def walk_dirs(stats, data={}):
     for root, dirs, files in os.walk(data["path"]):
 
         list_of_dirs = []
@@ -33,31 +34,29 @@ def walk_dirs(data={}):
             tmp_file_list = []
             for file in files:
                 full_file_path = os.path.join(root, file)
+                stats["TotalFiles"] += 1
                 try:
                     stat_info = os.stat(full_file_path)
-                    file_dict_test = {full_file_path: stat_info}
-                    tmp_file_list.append(file_dict_test)
-
-                    # mtime = os.path.getmtime(full_file_path)
-                    # atime = 
-                    # # print(full_file_path + '   ---   ' + str(mtime) )#+ '   days')
-                    # file_days_old = ((current_epoch - mtime) / 86400)
-                    # if file_days_old < days_old:
-                    #     data["old"] = False
-                    #     break
                 except Exception as e:
                     # print(e)
                     pass
+
+                file_stats = {full_file_path: full_file_path, "stat_info": stat_info}
+                stats["TotalSize"] += file_stats["stat_info"].st_size
+                tmp_file_list.append(file_stats)
+
             data["files"] = tmp_file_list
 
         if dirs:
             for d in dirs:
+                stats["TotalDirs"] += 1
+
                 tmp_dict = {}
                 tmp_dict["path"] = os.path.join(root, d)
                 # tmp_dict["old"] = True
                 tmp_dict["dirs"] = []
 
-                walk_dirs(tmp_dict)
+                walk_dirs(stats, tmp_dict)
 
                 # if not tmp_dict["old"]:
                 #     data["old"] = False
@@ -67,12 +66,11 @@ def walk_dirs(data={}):
 
         break
 
-# def print_path(data):
-#     if dirs:
-#         print(data["path"])
+def print_path(data):
+    pp.pprint(data)
 
-#     for d in data["dirs"]:
-#         print_path(d)
+    for d in data["dirs"]:
+        print_path(d)
 
 
 def main():
@@ -81,13 +79,19 @@ def main():
     og_path = args.path
     # days_old = args.days_old
 
+    stats = {}
+    stats["TotalFiles"] = 0
+    stats["TotalSize"] = 0
+    stats["TotalDirs"] = 1
+
     data = {}
     data["path"] = og_path
 
-    walk_dirs(data)
+    walk_dirs(stats, data)
 
     # print_path(data)
 
+    print(stats)
     # pp.pprint(data)
 
    
