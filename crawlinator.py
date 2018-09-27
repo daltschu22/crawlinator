@@ -123,7 +123,7 @@ def convert_size_human_friendly(size):
 
 def convert_seconds_human_friendly(seconds):
     
-    mod_timestamp = datetime.datetime.fromtimestamp(seconds)
+    mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
 
     return mod_timestamp
 
