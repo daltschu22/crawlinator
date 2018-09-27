@@ -46,15 +46,15 @@ def walk_dirs(use_time, stats, data={}):
                     print(e)
                     pass
 
-                file_stats = {full_file_path: full_file_path, "stat_info": stat_info} #Get stats of the file
+                file_stats = {full_file_path: full_file_path, "StatInfo": stat_info} #Get stats of the file
 
                 #Determine which time value to use for oldest/newest files
                 if use_time == 'c':
-                    file_time = file_stats["stat_info"].st_ctime
+                    file_time = file_stats["StatInfo"].st_ctime
                 if use_time == 'm':
-                    file_time = file_stats["stat_info"].st_mtime
+                    file_time = file_stats["StatInfo"].st_mtime
                 if use_time == 'a':
-                    file_time = file_stats["stat_info"].st_atime
+                    file_time = file_stats["StatInfo"].st_atime
 
                 if stats["OldestFileAge"] == None:
                     stats["OldestFileAge"] = file_time
@@ -72,7 +72,7 @@ def walk_dirs(use_time, stats, data={}):
                     stats["OldestFileAge"] = file_time
                     stats["NewestFileName"] = full_file_path
 
-                stats["TotalSize"] += file_stats["stat_info"].st_size #Add to the running size total
+                stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
                 tmp_file_list.append(file_stats)
 
             data["files"] = tmp_file_list
