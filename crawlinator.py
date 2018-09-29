@@ -64,12 +64,12 @@ def walk_dirs(use_time, stats, data={}):
                     stats["NewestFileAge"] = file_time
                     stats["NewestFileName"] = full_file_path
 
-                if stats["OldestFileAge"] < file_time:
+                if stats["OldestFileAge"] > file_time:
                     stats["OldestFileAge"] = file_time
                     stats["OldestFileName"] = full_file_path
 
-                if stats["NewestFileAge"] > file_time:
-                    stats["OldestFileAge"] = file_time
+                if stats["NewestFileAge"] < file_time:
+                    stats["NewestFileAge"] = file_time
                     stats["NewestFileName"] = full_file_path
 
                 stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
