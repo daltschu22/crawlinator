@@ -44,7 +44,12 @@ def walk_dirs(use_time, stats, data={}):
                     stat_info = os.stat(full_file_path)
                 except Exception as e:
                     print(e)
-                    pass
+                    #sb 20181001
+                    #symbolic links that are broken are identified in the print(e) statement, which is what we want to see
+                    #            Msg: "[Errno 2] No such file or directory: '<file, including path>'
+                    #continue goes to the next file in the list
+                    # pass would continue onto the next statement, fails because there is no file to get the stat on
+                    continue#pass
 
                 file_stats = {full_file_path: full_file_path, "StatInfo": stat_info} #Get stats of the file
 
@@ -165,7 +170,13 @@ def main():
         stats["NewestFileAge"] = convert_seconds_human_friendly(stats["NewestFileAge"])
 
     if stats["TotalSize"] and human_friendly:
-        stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats["TotalSize"])
+        #sb 20181001
+        #there's probably an elegant way to order the items in the dictionary when it is listed below
+        #with stats["HumanFriendlyTotalSize"] prints at the top, and then the bytes are listed at the bottom
+        #think we want human friendly or not, but not both?
+        #commented out original line
+        #stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats["TotalSize"])
+        stats["TotalSize"] = convert_size_human_friendly(stats["TotalSize"])
 
 
     # print_path(data)
