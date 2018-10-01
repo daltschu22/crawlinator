@@ -44,12 +44,7 @@ def walk_dirs(use_time, stats, data={}):
                     stat_info = os.stat(full_file_path)
                 except Exception as e:
                     print(e)
-                    #sb 20181001
-                    #symbolic links that are broken are identified in the print(e) statement, which is what we want to see
-                    #            Msg: "[Errno 2] No such file or directory: '<file, including path>'
-                    #continue goes to the next file in the list
-                    # pass would continue onto the next statement, fails because there is no file to get the stat on
-                    continue#pass
+                    continue
 
                 file_stats = {full_file_path: full_file_path, "StatInfo": stat_info} #Get stats of the file
 
@@ -102,13 +97,14 @@ def walk_dirs(use_time, stats, data={}):
         break
 
 def print_path(data):
+    #Print out the dictionary with relevant info -- NEEDS WORK
     pp.pprint(data)
 
-    for d in data["dirs"]:
-        print_path(d)
+    # for d in data["dirs"]:
+    #     print_path(d)
 
 def convert_size_human_friendly(size):
-    'Return the given bytes as a human friendly KB, MB, GB, or TB string'
+    #Return the given bytes as a human friendly KB, MB, GB, or TB string
     B = float(size)
     KB = float(1024)
     MB = float(KB ** 2) # 1,048,576
@@ -127,7 +123,7 @@ def convert_size_human_friendly(size):
         return '{0:.2f} TB'.format(B/TB)
 
 def convert_seconds_human_friendly(seconds):
-    
+    #Return a seconds value as a datetime formatted string
     mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
 
     return mod_timestamp
@@ -149,8 +145,6 @@ def main():
         print("Using default A_TIME")
         use_time = 'a'
 
-
-
     stats = {}
     stats["TotalFiles"] = 0
     stats["TotalSize"] = 0
@@ -170,12 +164,7 @@ def main():
         stats["NewestFileAge"] = convert_seconds_human_friendly(stats["NewestFileAge"])
 
     if stats["TotalSize"] and human_friendly:
-        #sb 20181001
-        #there's probably an elegant way to order the items in the dictionary when it is listed below
-        #with stats["HumanFriendlyTotalSize"] prints at the top, and then the bytes are listed at the bottom
-        #think we want human friendly or not, but not both?
-        #commented out original line
-        #stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats["TotalSize"])
+        stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats["TotalSize"])
         stats["TotalSize"] = convert_size_human_friendly(stats["TotalSize"])
 
 
