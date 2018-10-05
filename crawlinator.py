@@ -99,12 +99,14 @@ def walk_dirs(stats, data={}, **kwargs):
 
                 walk_dirs(stats, tmp_dict, **kwargs)
 
-                # if 'days_old' in kwargs:
                 if not tmp_dict["old"]:
                     data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
+
+                if data["old"] == True:
+                    stats["ArchiveableDirs"].append(tmp_dict["path"])
 
         break
 
@@ -115,8 +117,6 @@ def print_path(data):
     for d in data["dirs"]:
         print_path(d)
 
-
-        
 def convert_size_human_friendly(size):
     #Return the given bytes as a human friendly KB, MB, GB, or TB string
     B = float(size)
@@ -171,9 +171,9 @@ def main():
     stats["OldestFileName"] = None
     stats["NewestFileName"] = None
 
-    # if args.days_old:
-    #     stats["DaysOld"] = data
-
+    if args.days_old:
+        ArchiveableDirs = []
+        stats["ArchiveableDirs"] = ArchiveableDirs
 
     kwargs_dict = {} #kwargs dictionary for any optional stuff
     if args.days_old:
@@ -192,9 +192,7 @@ def main():
 
     # print_path(data)
 
-    if args.days_old:
-        print_path(data)
-    
+
     pp.pprint(stats)
     # pp.pprint(data)
 
