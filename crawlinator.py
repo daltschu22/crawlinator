@@ -15,8 +15,8 @@ current_epoch = time.time()
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Find stale dirs")
     parser.add_argument('path', metavar='/filesysem/path', help="Filesystem path")
-    # parser.add_argument('--old', action='store', type=int, help='Scan filesystem for directories with files older than # of days')
     parser.add_argument('-f', dest='human_friendly', action='store_true', help="Display sizes/times in a human friendly manner")
+    parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -24,15 +24,19 @@ def parse_arguments():
 
     return parser.parse_args()
 
-def walk_dirs(use_time, stats, data={}):
+def walk_dirs(stats, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"]):
 
         list_of_dirs = []
-        # data["old"] = True
         data["dirs"] = []
 
+        if 'days_old' in kwargs:
+            data["old"] = True
+
+        use_time = kwargs.get('use_time')
+
         if not files and not dirs:
-            # data["old"] = False
+            data["old"] = False
             return
 
         if files:
@@ -73,9 +77,14 @@ def walk_dirs(use_time, stats, data={}):
                     stats["NewestFileName"] = full_file_path
 
                 stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
-                tmp_file_list.append(file_stats)
+                
+                if 'days_old' in kwargs:
+                    file_days_old = ((current_epoch - file_time) / 86400)
+                    if file_days_old < kwargs.get('days_old'):
+                        data["old"] = False
 
-            data["files"] = tmp_file_list
+                # tmp_file_list.append(file_stats) #Are these needed?
+            # data["files"] = tmp_file_list #Are these needed?
 
         if dirs:
             for d in dirs:
@@ -83,13 +92,16 @@ def walk_dirs(use_time, stats, data={}):
 
                 tmp_dict = {}
                 tmp_dict["path"] = os.path.join(root, d)
-                # tmp_dict["old"] = True
                 tmp_dict["dirs"] = []
 
-                walk_dirs(use_time, stats, tmp_dict)
+                if 'days_old' in kwargs:
+                    tmp_dict["old"] = True
 
-                # if not tmp_dict["old"]:
-                #     data["old"] = False
+                walk_dirs(stats, tmp_dict, **kwargs)
+
+                # if 'days_old' in kwargs:
+                if not tmp_dict["old"]:
+                    data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
@@ -97,12 +109,14 @@ def walk_dirs(use_time, stats, data={}):
         break
 
 def print_path(data):
-    #Print out the dictionary with relevant info -- NEEDS WORK
-    pp.pprint(data)
+    if data["old"]:
+        print(data["path"])
 
-    # for d in data["dirs"]:
-    #     print_path(d)
+    for d in data["dirs"]:
+        print_path(d)
 
+
+        
 def convert_size_human_friendly(size):
     #Return the given bytes as a human friendly KB, MB, GB, or TB string
     B = float(size)
@@ -145,6 +159,9 @@ def main():
         print("Using default A_TIME")
         use_time = 'a'
 
+    data = {}
+    data["path"] = og_path
+
     stats = {}
     stats["TotalFiles"] = 0
     stats["TotalSize"] = 0
@@ -154,15 +171,20 @@ def main():
     stats["OldestFileName"] = None
     stats["NewestFileName"] = None
 
-    data = {}
-    data["path"] = og_path
+    # if args.days_old:
+    #     stats["DaysOld"] = data
 
-    walk_dirs(use_time, stats, data)
+
+    kwargs_dict = {} #kwargs dictionary for any optional stuff
+    if args.days_old:
+        kwargs_dict.update({'days_old' : args.days_old})
+    kwargs_dict.update({'use_time' : use_time})
+
+    walk_dirs(stats, data, **kwargs_dict)
 
     if human_friendly:
         stats["OldestFileAge"] = convert_seconds_human_friendly(stats["OldestFileAge"])
         stats["NewestFileAge"] = convert_seconds_human_friendly(stats["NewestFileAge"])
-
     if stats["TotalSize"] and human_friendly:
         stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats["TotalSize"])
         stats["TotalSize"] = convert_size_human_friendly(stats["TotalSize"])
@@ -170,6 +192,9 @@ def main():
 
     # print_path(data)
 
+    if args.days_old:
+        print_path(data)
+    
     pp.pprint(stats)
     # pp.pprint(data)
 
