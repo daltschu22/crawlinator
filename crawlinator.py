@@ -99,13 +99,15 @@ def walk_dirs(stats, data={}, **kwargs):
 
                 walk_dirs(stats, tmp_dict, **kwargs)
 
-                if not tmp_dict["old"]:
+                #if not tmp_dict["old"]:
+                if not ("old" in tmp_dict.keys()):
                     data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
 
-                if data["old"] == True:
+                #if data["old"] == True
+                if ("old" in data.keys() and data["old"] == True):
                     stats["ArchiveableDirs"].append(tmp_dict["path"])
 
         break
@@ -182,7 +184,8 @@ def main():
 
     walk_dirs(stats, data, **kwargs_dict)
 
-    if human_friendly:
+    #verify that there are files and the flag is looking for human friendly
+    if (stats["TotalFiles"] > 0 and human_friendly):
         stats["OldestFileAge"] = convert_seconds_human_friendly(stats["OldestFileAge"])
         stats["NewestFileAge"] = convert_seconds_human_friendly(stats["NewestFileAge"])
     if stats["TotalSize"] and human_friendly:
