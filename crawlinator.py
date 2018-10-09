@@ -17,6 +17,7 @@ def parse_arguments():
     parser.add_argument('path', metavar='/filesysem/path', help="Filesystem path")
     parser.add_argument('-f', dest='human_friendly', action='store_true', help="Display sizes/times in a human friendly manner")
     parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
+    parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -40,7 +41,7 @@ def walk_dirs(stats, data={}, **kwargs):
             return
 
         if files:
-            tmp_file_list = []
+            # tmp_file_list = []
             for file in files:
                 full_file_path = os.path.join(root, file)
                 stats["TotalFiles"] += 1
@@ -77,7 +78,14 @@ def walk_dirs(stats, data={}, **kwargs):
                     stats["NewestFileName"] = full_file_path
 
                 stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
-                
+
+                if "SizeHistogram" in stats: #This is broken for now
+                    print("SIZE HISTOGRAM!")
+                    human_readable_size = convert_size_human_friendly(file_stats["StatInfo"].st_size)
+                    # print(human_readable_size)
+                    human_split_list = human_readable_size.split(' ')
+                    histogram_dict_parse(human_split_list, stats)
+
                 if 'days_old' in kwargs:
                     file_days_old = ((current_epoch - file_time) / 86400)
                     if file_days_old < kwargs.get('days_old'):
@@ -99,13 +107,13 @@ def walk_dirs(stats, data={}, **kwargs):
 
                 walk_dirs(stats, tmp_dict, **kwargs)
 
-                if not tmp_dict["old"]:
+                if "old" not in tmp_dict:
                     data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
 
-                if data["old"] == True:
+                if "old" in data and data["old"] == True:
                     stats["ArchiveableDirs"].append(tmp_dict["path"])
 
         break
@@ -116,6 +124,13 @@ def print_path(data):
 
     for d in data["dirs"]:
         print_path(d)
+
+def histogram_dict_parse(list_of_size, stats):
+    #Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
+    size_in_human = list_of_size[0]
+    print(int(float(size_in_human)))
+
+
 
 def convert_size_human_friendly(size):
     #Return the given bytes as a human friendly KB, MB, GB, or TB string
@@ -178,11 +193,15 @@ def main():
     kwargs_dict = {} #kwargs dictionary for any optional stuff
     if args.days_old:
         kwargs_dict.update({'days_old' : args.days_old})
+    if args.size_histogram:
+        size_histogram = {}
+        stats["SizeHistogram"] = size_histogram
     kwargs_dict.update({'use_time' : use_time})
 
-    walk_dirs(stats, data, **kwargs_dict)
 
-    if human_friendly:
+    walk_dirs(stats, data, **kwargs_dict) #Recursively walk the filesystem
+
+    if stats["TotalFiles"] > 0 and human_friendly:
         stats["OldestFileAge"] = convert_seconds_human_friendly(stats["OldestFileAge"])
         stats["NewestFileAge"] = convert_seconds_human_friendly(stats["NewestFileAge"])
     if stats["TotalSize"] and human_friendly:
