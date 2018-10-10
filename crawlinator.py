@@ -79,7 +79,7 @@ def walk_dirs(stats, data={}, **kwargs):
 
                 stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
 
-                if "SizeHistogram" in stats: #This is broken for now
+                if "SizeHistogram" in stats:
                     human_readable_size_list = convert_size_human_friendly(file_stats["StatInfo"].st_size)
                     histogram_dict_parse(human_readable_size_list, stats)
 
@@ -104,7 +104,7 @@ def walk_dirs(stats, data={}, **kwargs):
 
                 walk_dirs(stats, tmp_dict, **kwargs)
 
-                if "old" not in tmp_dict:
+                if "old" in tmp_dict and not tmp_dict["old"]:
                     data["old"] = False
                     
                 list_of_dirs.append(tmp_dict)
@@ -115,12 +115,12 @@ def walk_dirs(stats, data={}, **kwargs):
 
         break
 
-def print_path(data):
-    if data["old"]:
-        print(data["path"])
+# def print_path(data):
+#     if data["old"]:
+#         print(data["path"])
 
-    for d in data["dirs"]:
-        print_path(d)
+#     for d in data["dirs"]:
+#         print_path(d)
 
 def histogram_dict_parse(list_of_size, stats):
     #Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
