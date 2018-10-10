@@ -110,7 +110,7 @@ def walk_dirs(stats, data={}, **kwargs):
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
 
-                if "old" in data and data["old"] == True:
+                if "old" in data and data["old"]:
                     stats["ArchiveableDirs"].append(tmp_dict["path"])
 
         break
