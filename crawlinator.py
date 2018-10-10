@@ -187,10 +187,10 @@ def main():
     og_path = args.path
     human_friendly = args.human_friendly
 
-    path_perms = check_read_perms(og_path)
-    if not path_perms:
-        print("You dont have permissions to that path!")
-        exit()
+    # path_perms = check_read_perms(og_path)
+    # if not path_perms:
+    #     print("You dont have permissions to that path!")
+    #     exit()
 
     if args.use_c_time:
         print("Using C_TIME")
