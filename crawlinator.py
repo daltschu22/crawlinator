@@ -80,11 +80,8 @@ def walk_dirs(stats, data={}, **kwargs):
                 stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
 
                 if "SizeHistogram" in stats: #This is broken for now
-                    print("SIZE HISTOGRAM!")
-                    human_readable_size = convert_size_human_friendly(file_stats["StatInfo"].st_size)
-                    # print(human_readable_size)
-                    human_split_list = human_readable_size.split(' ')
-                    histogram_dict_parse(human_split_list, stats)
+                    human_readable_size_list = convert_size_human_friendly(file_stats["StatInfo"].st_size)
+                    histogram_dict_parse(human_readable_size_list, stats)
 
                 if 'days_old' in kwargs:
                     file_days_old = ((current_epoch - file_time) / 86400)
@@ -127,10 +124,23 @@ def print_path(data):
 
 def histogram_dict_parse(list_of_size, stats):
     #Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
-    size_in_human = list_of_size[0]
-    print(int(float(size_in_human)))
+    # size_in_human = list_of_size[0]
+    size_human_int = round(list_of_size[0])
+    size_suffix_str = str(list_of_size[1])
 
+    if size_suffix_str == 'Byte' or size_suffix_str == 'Bytes':
+        if "1KB" not in stats["SizeHistogram"]:
+            stats["SizeHistogram"]["1KB"] = 1
+        else:
+            stats["SizeHistogram"]["1KB"] += 1
+    else:
+        size_rounded_pow = 1<<(size_human_int - 1).bit_length() #Black magic to find nearest power of 2
+        size_rounded_with_suffix = str(size_rounded_pow) + size_suffix_str
 
+        if size_rounded_with_suffix not in stats["SizeHistogram"]:
+            stats["SizeHistogram"][size_rounded_with_suffix] = 1
+        elif size_rounded_with_suffix in stats["SizeHistogram"]:
+            stats["SizeHistogram"][size_rounded_with_suffix] += 1
 
 def convert_size_human_friendly(size):
     #Return the given bytes as a human friendly KB, MB, GB, or TB string
@@ -140,16 +150,25 @@ def convert_size_human_friendly(size):
     GB = float(KB ** 3) # 1,073,741,824
     TB = float(KB ** 4) # 1,099,511,627,776
 
+    size_list = []
+
     if B < KB:
-        return '{0} {1}'.format(B,'Bytes' if 0 == B > 1 else 'Byte')
+        size_list.insert(0, B)
+        size_list.insert(1, '{0}'.format('Bytes' if 0 == B > 1 else 'Byte'))
     elif KB <= B < MB:
-        return '{0:.2f} KB'.format(B/KB)
+        size_list.insert(0, B/KB)
+        size_list.insert(1, 'KiB')
     elif MB <= B < GB:
-        return '{0:.2f} MB'.format(B/MB)
+        size_list.insert(0, B/MB)
+        size_list.insert(1, 'MiB')
     elif GB <= B < TB:
-        return '{0:.2f} GB'.format(B/GB)
+        size_list.insert(0, B/GB)
+        size_list.insert(1, 'GiB')
     elif TB <= B:
-        return '{0:.2f} TB'.format(B/TB)
+        size_list.insert(0, B/TB)
+        size_list.insert(1, 'TiB')
+
+    return size_list
 
 def convert_seconds_human_friendly(seconds):
     #Return a seconds value as a datetime formatted string
