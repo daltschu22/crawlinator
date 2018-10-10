@@ -176,12 +176,22 @@ def convert_seconds_human_friendly(seconds):
 
     return mod_timestamp
 
+def check_read_perms(path):
+    access = os.access(path, os.R_OK)
+
+    return access
+
 def main():
     args = parse_arguments() #Parse arguments
 
     og_path = args.path
     human_friendly = args.human_friendly
     # days_old = args.days_old
+
+    path_perms = check_read_perms(og_path)
+    if not path_perms:
+        print("You dont have permissions to that path!")
+        exit()
 
     if args.use_c_time:
         print("Using C_TIME")
