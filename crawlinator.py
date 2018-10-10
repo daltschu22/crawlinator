@@ -134,7 +134,7 @@ def histogram_dict_parse(list_of_size, stats):
         else:
             stats["SizeHistogram"]["1KB"] += 1
     else:
-        size_rounded_pow = 1<<(size_human_int - 1).bit_length() #Black magic to find nearest power of 2
+        size_rounded_pow = 1 << (size_human_int - 1).bit_length() #Black magic to find nearest power of 2
         size_rounded_with_suffix = str(size_rounded_pow) + size_suffix_str
 
         if size_rounded_with_suffix not in stats["SizeHistogram"]:
