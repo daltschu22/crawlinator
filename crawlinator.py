@@ -27,7 +27,7 @@ def parse_arguments():
 
 def walk_dirs(stats, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"]):
-
+        
         list_of_dirs = []
         data["dirs"] = []
 
@@ -186,7 +186,6 @@ def main():
 
     og_path = args.path
     human_friendly = args.human_friendly
-    # days_old = args.days_old
 
     path_perms = check_read_perms(og_path)
     if not path_perms:
