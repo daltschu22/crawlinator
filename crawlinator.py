@@ -18,6 +18,7 @@ def parse_arguments():
     parser.add_argument('-f', dest='human_friendly', action='store_true', help="Display sizes/times in a human friendly manner")
     parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
     parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
+    parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -244,10 +245,16 @@ def main():
         stats["TotalSize"] = convert_size_human_friendly(stats["TotalSize"])
 
 
+
+    #Temporary print (WIll make a dedicated results printing function later)
+    if args.suppress_failures:
+        stats["Failures"] = "Suppressed!"
+        pp.pprint(stats)
+    else:
+        pp.pprint(stats)
+
+
     # print_path(data)
-
-
-    pp.pprint(stats)
     # pp.pprint(data)
 
    
