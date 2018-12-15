@@ -25,8 +25,12 @@ def parse_arguments():
 
     return parser.parse_args()
 
+
+def walk_error(os_error, stats): #Garbage to get failures working because os.walk is janky
+    stats["Failures"].append(os_error.filename)
+
 def walk_dirs(stats, data={}, **kwargs):
-    for root, dirs, files in os.walk(data["path"]):
+    for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats)):
         
         list_of_dirs = []
         data["dirs"] = []
@@ -213,6 +217,7 @@ def main():
     stats["NewestFileAge"] = None
     stats["OldestFileName"] = None
     stats["NewestFileName"] = None
+    stats["Failures"] = []
 
     if args.days_old:
         ArchiveableDirs = []
