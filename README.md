@@ -21,6 +21,8 @@ Crawl filesystem recursively and display relevant stats that you might find usef
 
           --size-histogram     Display sizes of files in a histogram
 
+          --suppress-failures  suppress failures from output
+
           -m                   Use m_time instead of a_time
 
           -c                   Use c_time instead of a_time
