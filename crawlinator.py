@@ -27,7 +27,8 @@ def parse_arguments():
 
 
 def walk_error(os_error, stats): #Garbage to get failures working because os.walk is janky
-    stats["Failures"].append(os_error.filename)
+    # error = {os_error: os_error.filename}
+    stats["Failures"].append(os_error)
 
 def walk_dirs(stats, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats)):
@@ -52,7 +53,8 @@ def walk_dirs(stats, data={}, **kwargs):
                 try:
                     stat_info = os.stat(full_file_path)
                 except Exception as e:
-                    print(e)
+                    error_dict = {e: full_file_path}
+                    stats["Failures"].append(error_dict)
                     continue
 
                 file_stats = {full_file_path: full_file_path, "StatInfo": stat_info} #Get stats of the file
@@ -191,10 +193,10 @@ def main():
     og_path = args.path
     human_friendly = args.human_friendly
 
-    # path_perms = check_read_perms(og_path)
-    # if not path_perms:
-    #     print("You dont have permissions to that path!")
-    #     exit()
+    path_perms = check_read_perms(og_path)
+    if not path_perms:
+        print("You dont have permission, or that path doesnt exist!")
+        exit()
 
     if args.use_c_time:
         print("Using C_TIME")
