@@ -6,6 +6,7 @@ import argparse
 import pprint
 import time
 import datetime
+import checkpyversion
 
 pp = pprint.PrettyPrinter(indent=4)
 
