@@ -27,7 +27,6 @@ def parse_arguments():
 
     return parser.parse_args()
 
-
 def walk_error(os_error, stats): #Garbage to get failures working because os.walk is janky
     # error = {os_error: os_error.filename}
     stats["Failures"].append(os_error)
@@ -69,6 +68,7 @@ def walk_dirs(stats, data={}, **kwargs):
                 if use_time == 'a':
                     file_time = file_stats["StatInfo"].st_atime
 
+                #Check if stats are empty or need to be updated
                 if stats["OldestFileAge"] == None:
                     stats["OldestFileAge"] = file_time
                     stats["OldestFileName"] = full_file_path
@@ -85,15 +85,23 @@ def walk_dirs(stats, data={}, **kwargs):
                     stats["NewestFileAge"] = file_time
                     stats["NewestFileName"] = full_file_path
 
-                stats["TotalSize"] += file_stats["StatInfo"].st_size #Add to the running size total
+                current_file_size = file_stats["StatInfo"].st_size
+
+                stats["TotalSize"] += current_file_size #Add to the running size total
+
+                if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
+                    print("LESS THEN!", len(stats["LargestFiles"]))
+                    file_size_tuple = (full_file_path, current_file_size)
+                    if (len(stats["LargestFiles"]) == 0) or (current_file_size > stats["LargestFiles"][0][1]): 
+                        stats["LargestFiles"].insert(0, file_size_tuple)
 
                 if "SizeHistogram" in stats:
-                    human_readable_size_list = convert_size_human_friendly(file_stats["StatInfo"].st_size)
+                    human_readable_size_list = convert_size_human_friendly(current_file_size)
                     histogram_dict_parse(human_readable_size_list, stats)
 
-                if 'days_old' in kwargs:
+                if "days_old" in kwargs:
                     file_days_old = ((current_epoch - file_time) / 86400)
-                    if file_days_old < kwargs.get('days_old'):
+                    if file_days_old < kwargs.get("days_old"):
                         data["old"] = False
 
                 # tmp_file_list.append(file_stats) #Are these needed?
@@ -107,7 +115,7 @@ def walk_dirs(stats, data={}, **kwargs):
                 tmp_dict["path"] = os.path.join(root, d)
                 tmp_dict["dirs"] = []
 
-                if 'days_old' in kwargs:
+                if "days_old" in kwargs:
                     tmp_dict["old"] = True
 
                 walk_dirs(stats, tmp_dict, **kwargs)
@@ -222,18 +230,21 @@ def main():
     stats["OldestFileName"] = None
     stats["NewestFileName"] = None
     stats["Failures"] = []
+    stats["LargestFiles"] = []
+    stats["ExecutionTime"] = None
 
     if args.days_old:
-        ArchiveableDirs = []
-        stats["ArchiveableDirs"] = ArchiveableDirs
+        stats["ArchiveableDirs"] = []
 
     kwargs_dict = {} #kwargs dictionary for any optional stuff
     if args.days_old:
-        kwargs_dict.update({'days_old' : args.days_old})
+        kwargs_dict["days_old"] = args.days_old
     if args.size_histogram:
         size_histogram = {}
         stats["SizeHistogram"] = size_histogram
-    kwargs_dict.update({'use_time' : use_time})
+    kwargs_dict["use_time"] = use_time
+
+    kwargs_dict["LargestFilesNum"] = 10
 
 
     walk_dirs(stats, data, **kwargs_dict) #Recursively walk the filesystem
@@ -243,11 +254,13 @@ def main():
         stats["NewestFileAge"] = convert_seconds_human_friendly(stats["NewestFileAge"])
     if stats["TotalSize"] and human_friendly:
         stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats["TotalSize"])
-        stats["TotalSize"] = convert_size_human_friendly(stats["TotalSize"])
 
+    #Calculate time it took for script to run
+    end_epoch_time = time.time()
+    total_execution_time = round(end_epoch_time - current_epoch, 5)
+    stats["ExecutionTime"] = total_execution_time
 
-
-    #Temporary print (WIll make a dedicated results printing function later)
+    #Temporary print (Will make a dedicated results printing function later)
     if args.suppress_failures:
         stats["Failures"] = "Suppressed!"
         pp.pprint(stats)
