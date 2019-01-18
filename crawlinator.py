@@ -7,6 +7,7 @@ import pprint
 import time
 import datetime
 import checkpyversion
+import bisect
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -20,6 +21,7 @@ def parse_arguments():
     parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
     parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
     parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
+    parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -88,13 +90,22 @@ class FilesystemStats:
             elif size_rounded_with_suffix in self.stats["SizeHistogram"]:
                 self.stats["SizeHistogram"][size_rounded_with_suffix] += 1
 
-    def check_largest_size(self, current_file_size):
+    def check_largest_size(self, current_file_size, full_file_path, limit):
         #Figure out the list of the top X files
-        if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
-            print("LESS THEN!", len(stats["LargestFiles"]))
-            file_size_tuple = (full_file_path, current_file_size)
-            if (len(stats["LargestFiles"]) == 0) or (current_file_size > stats["LargestFiles"][0][1]): 
-                stats["LargestFiles"].insert(0, file_size_tuple)
+        # if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
+            # print("LESS THEN!", len(stats["LargestFiles"]))
+
+        file_size_tuple = (current_file_size, full_file_path)
+        if len(self.stats["LargestFiles"]) == 0: 
+            self.stats["LargestFiles"].insert(0, file_size_tuple)
+
+        bisect_num = bisect.bisect(self.stats["LargestFiles"], file_size_tuple)
+
+        self.stats["LargestFiles"].insert(bisect_num, file_size_tuple)
+        
+        if len(self.stats["LargestFiles"]) == limit:
+            self.stats["LargestFiles"].pop(0)
+        
 
 def walk_error(os_error, stats_object): #Garbage to get failures working because os.walk is janky
     # error = {os_error: os_error.filename}
@@ -141,6 +152,9 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
                 current_file_size = file_stats["StatInfo"].st_size #Get current file size
                 stats_object.stats["TotalSize"] += current_file_size #Add to the running size total
+
+                if kwargs.get("LargestFilesNum"):
+                    stats_object.check_largest_size(current_file_size, full_file_path, kwargs.get("LargestFilesNum"))
 
                 stats_object.update_sizehistogram(current_file_size)
 
@@ -260,7 +274,8 @@ def main():
         stats_object.stats["SizeHistogram"] = size_histogram
     optional_args["use_time"] = use_time
 
-    optional_args["LargestFilesNum"] = 10
+    if args.top_file_count:
+        optional_args["LargestFilesNum"] = args.top_file_count 
 
     walk_dirs(stats_object, data, **optional_args) #Recursively walk the filesystem
 
