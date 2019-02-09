@@ -22,11 +22,12 @@ def process_directory(redis, queues, og_path):
 
     for directory in directory_list:
         print("Processing directory {}".format(directory))
-        os.path.join(root, directory)
+        full_path = os.path.join(root, directory)
         dir_queue.enqueue_call(
             func=process_directory, 
-            args=redis,
+            args=(redis,
             queues,
-            directory
+            full_path
             )
+        )
 

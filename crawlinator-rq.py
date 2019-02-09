@@ -64,7 +64,7 @@ def main():
     redis.set('stats:TotalDirs', 1)
     redis.set('stats:TotalSize', 0)
 
-    dir_list, file_list = dir_apps.process_directory(queues, redis, main_path)
+    dir_list, file_list = dir_apps.process_directory(redis, queues, main_path)
 
 
 
