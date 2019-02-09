@@ -57,18 +57,25 @@ def main():
     queues['dir_queue'] = Queue('dirs', connection=redis)
     queues['file_queue'] = Queue('files', connection=redis)
     
+    queues['dir_queue'].empty()
+    queues['file_queue'].empty()
+
     redis.set('stats:TotalFiles', 0)
     redis.set('stats:TotalDirs', 1)
     redis.set('stats:TotalSize', 0)
 
-    dir_apps.process_directory(main_path, redis, queues)
+    dir_list, file_list = dir_apps.process_directory(queues, redis, main_path)
 
-    # redis.incr('stats:TotalFiles', 1)
-    # redis.incr('stats:TotalSize', 500)
+
+
+
 
     time.sleep(3)
-    print(redis.get('stats:TotalDirs'))
-    # print(redis.get('stats:TotalDirs'))
+
+    TotalDirs = redis.get('stats:TotalDirs')
+    TotalFiles = redis.get('stats:TotalFiles')
+    print("There were {} dirs".format(TotalDirs))
+    print("There were {} files".format(TotalFiles))
     # print(redis.get('stats:TotalSize'))
 
 
