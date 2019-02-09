@@ -112,7 +112,10 @@ def walk_error(os_error, stats_object): #Garbage to get failures working because
     stats_object.stats["Failures"].append(os_error)
 
 def walk_dirs(stats_object, data={}, **kwargs):
-    for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
+    for root, dirs, files in os.walk(
+        data["path"], topdown=True,
+        onerror=lambda err: walk_error(err, stats_object)
+        ):
         
         list_of_dirs = []
         data["dirs"] = []
