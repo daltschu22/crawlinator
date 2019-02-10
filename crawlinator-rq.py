@@ -38,11 +38,6 @@ def check_read_perms(path):
 
     return access
 
-# def walk_error(os_error):
-#     """Capture errors with the os.walk in the walk_dir function"""
-#     # error = {os_error: os_error.filename}
-#     stats_object.stats["Failures"].append(os_error)
-
 def main():
     args = parse_arguments() #Parse arguments
 
@@ -64,9 +59,13 @@ def main():
     redis.set('stats:TotalDirs', 1)
     redis.set('stats:TotalSize', 0)
 
-    dir_list, file_list = dir_apps.process_directory(redis, queues, main_path)
+   
+    # queues.get('dir_queue').enqueue_call(
+    #     func=dir_apps.process_directory, 
+    #     args=(redis, fs_dict)
+    # )
 
-
+    # dir_list, file_list = dir_apps.process_directory(redis, main_path)
 
 
 
