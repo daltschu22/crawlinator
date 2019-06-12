@@ -48,6 +48,7 @@ class FilesystemStats:
         self.stats["LargestFiles"] = []
         self.stats["ExecutionTime"] = None
 
+
     def update_oldestfile(self, file_time, full_file_path):
         #Check the current file against the running oldest file
         if self.stats["OldestFile"]["Age"] == None:
@@ -57,6 +58,7 @@ class FilesystemStats:
         if self.stats["OldestFile"]["Age"] > file_time:
             self.stats["OldestFile"]["Age"] = file_time
             self.stats["OldestFile"]["Path"] = full_file_path
+
 
     def update_newestfile(self, file_time, full_file_path):
         #Check the current file against the running newest file
@@ -68,13 +70,15 @@ class FilesystemStats:
             self.stats["NewestFile"]["Age"] = file_time
             self.stats["NewestFile"]["Path"] = full_file_path
 
+
     def update_sizehistogram(self, current_file_size):
         if "SizeHistogram" in self.stats:
             human_readable_size_list = convert_size_human_friendly(current_file_size)
             self.histogram_dict_parse(human_readable_size_list)
 
+
     def histogram_dict_parse(self, list_of_size):
-    #Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
+    # Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
     # size_in_human = list_of_size[0]
         size_human_int = round(list_of_size[0])
         size_suffix_str = str(list_of_size[1])
@@ -93,6 +97,7 @@ class FilesystemStats:
             elif size_rounded_with_suffix in self.stats["SizeHistogram"]:
                 self.stats["SizeHistogram"][size_rounded_with_suffix] += 1
 
+
     def check_largest_size(self, current_file_size, full_file_path, limit):
         #Figure out the list of the top X files
         # if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
@@ -105,14 +110,15 @@ class FilesystemStats:
         bisect_num = bisect.bisect(self.stats["LargestFiles"], file_size_tuple)
 
         self.stats["LargestFiles"].insert(bisect_num, file_size_tuple)
-        
+
         if len(self.stats["LargestFiles"]) == limit:
             self.stats["LargestFiles"].pop(0)
-        
+
 
 def walk_error(os_error, stats_object): #Garbage to get failures working because os.walk is janky
     # error = {os_error: os_error.filename}
     stats_object.stats["Failures"].append(os_error)
+
 
 def walk_dirs(stats_object, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
@@ -193,6 +199,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
         break
 
+
 def convert_size_human_friendly(size):
     #Return the given bytes as a human friendly KB, MB, GB, or TB string
     B = float(size)
@@ -221,19 +228,22 @@ def convert_size_human_friendly(size):
 
     return size_list
 
+
 def convert_seconds_human_friendly(seconds):
     #Return a seconds value as a datetime formatted string
     mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
 
     return mod_timestamp
 
+
 def check_read_perms(path):
     access = os.access(path, os.R_OK)
 
     return access
 
-def filter_children_paths(path_list):
 
+def filter_children_paths(path_list):
+    """ Iterate through list of paths and remove any extraneous ones."""
     # Sort list
     sorted_path_list = sorted(path_list)
 
@@ -249,17 +259,18 @@ def filter_children_paths(path_list):
 
     return sorted_path_list
 
-def write_object_to_json_file(object_to_json, path_to_save):
-    """Save the list of directories that match the old_rollup criteria to a json object in a defined path"""
 
+def write_object_to_json_file(object_to_json, path_to_save):
+    """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
     todays_date_formatted = todays_date.strftime("%Y-%m-%d")
 
-    path_with_file = '{}old_rollup_{}.json'.format(path_to_save, todays_date_formatted)
-    print(path_with_file)
-    with open(path_with_file, 'w') as outfile:
-        json.dump(object_to_json, outfile)
+    if os.path.exists(path_to_save):
+        dir_path = os.path.join(path_to_save, '')
+        path_with_file = '{}old_rollup_{}.json'.format(dir_path, todays_date_formatted)
+        with open(path_with_file, 'w') as outfile:
+            json.dump(object_to_json, outfile)
 
-    
+
 def main():
     args = parse_arguments()  # Parse arguments
 
