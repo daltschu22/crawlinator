@@ -8,11 +8,13 @@ import time
 import datetime
 import checkpyversion
 import bisect
+import json
 
 pp = pprint.PrettyPrinter(indent=4)
 
 epoch_one_day = 86400
 current_epoch = time.time()
+todays_date = datetime.datetime.today()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Find stale dirs")
@@ -22,6 +24,7 @@ def parse_arguments():
     parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
     parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
     parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
+    parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -160,7 +163,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
                 if "days_old" in kwargs:
                     file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
-                    if file_days_old < kwargs.get("days_old"):
+                    if file_days_old < kwargs.get("days_old"): 
                         data["old"] = False
 
                 # tmp_file_list.append(file_stats) #Are these needed?
@@ -246,16 +249,26 @@ def filter_children_paths(path_list):
 
     return sorted_path_list
 
+def write_object_to_json_file(object_to_json, path_to_save):
+    """Save the list of directories that match the old_rollup criteria to a json object in a defined path"""
+
+    todays_date_formatted = todays_date.strftime("%Y-%m-%d")
+
+    path_with_file = '{}old_rollup_{}.json'.format(path_to_save, todays_date_formatted)
+    print(path_with_file)
+    with open(path_with_file, 'w') as outfile:
+        json.dump(object_to_json, outfile)
+
     
 def main():
-    args = parse_arguments() #Parse arguments
+    args = parse_arguments()  # Parse arguments
 
     og_path = args.path
     human_friendly = args.human_friendly
 
     path_perms = check_read_perms(og_path)
     if not path_perms:
-        print("You dont have permission, or that path doesnt exist!")
+        print("ERROR: You dont have permission, or that path doesnt exist!")
         exit()
 
     if args.use_c_time:
@@ -274,6 +287,9 @@ def main():
     stats_object = FilesystemStats()
 
     if args.days_old:
+        if args.days_old == 0:
+            print("ERROR: You must define a number of days greater than 0!")
+            exit()
         stats_object.stats["ArchiveableDirs"] = []
 
     optional_args = {} #kwargs dictionary for any optional stuff
@@ -299,22 +315,21 @@ def main():
     fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
     stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
 
-    #Calculate time it took for script to run
+    # Save json to path defined if argument given
+    if args.output_rollup_path:
+        write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], args.output_rollup_path)
+
+    # Calculate time it took for script to run
     end_epoch_time = time.time()
     total_execution_time = round(end_epoch_time - current_epoch, 5)
     stats_object.stats["ExecutionTime"] = total_execution_time
 
-    #Temporary print (Will make a dedicated results printing function later)
+    # Temporary print (Will make a dedicated results printing function later)
     if args.suppress_failures:
         stats_object.stats["Failures"] = "Suppressed!"
         pp.pprint(stats_object.stats)
     else:
         pp.pprint(stats_object.stats)
-
-
-    # print_path(data)
-    # pp.pprint(data)
-
-   
+  
 if __name__ == "__main__":
     main()
