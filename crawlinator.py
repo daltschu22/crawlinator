@@ -96,7 +96,7 @@ class FilesystemStats:
             # print("LESS THEN!", len(stats["LargestFiles"]))
 
         file_size_tuple = (current_file_size, full_file_path)
-        if len(self.stats["LargestFiles"]) == 0: 
+        if len(self.stats["LargestFiles"]) == 0:
             self.stats["LargestFiles"].insert(0, file_size_tuple)
 
         bisect_num = bisect.bisect(self.stats["LargestFiles"], file_size_tuple)
@@ -150,8 +150,8 @@ def walk_dirs(stats_object, data={}, **kwargs):
                 stats_object.update_oldestfile(file_time, full_file_path)
                 stats_object.update_newestfile(file_time, full_file_path)
 
-                current_file_size = file_stats["StatInfo"].st_size #Get current file size
-                stats_object.stats["TotalSize"] += current_file_size #Add to the running size total
+                current_file_size = file_stats["StatInfo"].st_size  # Get current file size
+                stats_object.stats["TotalSize"] += current_file_size  # Add to the running size total
 
                 if kwargs.get("LargestFilesNum"):
                     stats_object.check_largest_size(current_file_size, full_file_path, kwargs.get("LargestFilesNum"))
@@ -159,7 +159,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
                 stats_object.update_sizehistogram(current_file_size)
 
                 if "days_old" in kwargs:
-                    file_days_old = ((current_epoch - file_time) / 86400)
+                    file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
                     if file_days_old < kwargs.get("days_old"):
                         data["old"] = False
 
@@ -189,14 +189,6 @@ def walk_dirs(stats_object, data={}, **kwargs):
                     stats_object.stats["ArchiveableDirs"].append(tmp_dict["path"])
 
         break
-
-# def print_path(data):
-#     if data["old"]:
-#         print(data["path"])
-
-#     for d in data["dirs"]:
-#         print_path(d)
-
 
 def convert_size_human_friendly(size):
     #Return the given bytes as a human friendly KB, MB, GB, or TB string
@@ -237,6 +229,24 @@ def check_read_perms(path):
 
     return access
 
+def filter_children_paths(path_list):
+
+    # Sort list
+    sorted_path_list = sorted(path_list)
+
+    i = 0
+    while i < len(sorted_path_list):
+        if i == (len(sorted_path_list) - 1):
+            break
+        if '{}/'.format(sorted_path_list[i]) in '{}/'.format(sorted_path_list[i+1]):
+            print("DELETING {}".format(sorted_path_list[i+1]))
+            del sorted_path_list[i+1]
+        else:
+            i += 1
+
+    return sorted_path_list
+
+    
 def main():
     args = parse_arguments() #Parse arguments
 
@@ -275,15 +285,19 @@ def main():
     optional_args["use_time"] = use_time
 
     if args.top_file_count:
-        optional_args["LargestFilesNum"] = args.top_file_count 
+        optional_args["LargestFilesNum"] = args.top_file_count
 
-    walk_dirs(stats_object, data, **optional_args) #Recursively walk the filesystem
+    walk_dirs(stats_object, data, **optional_args)  # Recursively walk the filesystem
 
     if stats_object.stats["TotalFiles"] > 0 and human_friendly:
         stats_object.stats["OldestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["OldestFile"]["Age"])
         stats_object.stats["NewestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["NewestFile"]["Age"])
     if stats_object.stats["TotalSize"] and human_friendly:
         stats_object.stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats_object.stats["TotalSize"])
+
+    # Filter out extraneous paths
+    fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
+    stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
 
     #Calculate time it took for script to run
     end_epoch_time = time.time()
