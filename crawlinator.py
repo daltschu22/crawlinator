@@ -260,13 +260,14 @@ def filter_children_paths(path_list):
     return sorted_path_list
 
 
-def write_object_to_json_file(object_to_json, path_to_save):
+def write_object_to_json_file(object_to_json, input_path, path_to_save):
     """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
     todays_date_formatted = todays_date.strftime("%Y-%m-%d")
 
     if os.path.exists(path_to_save):
         dir_path = os.path.join(path_to_save, '')
-        path_with_file = '{}old_rollup_{}.json'.format(dir_path, todays_date_formatted)
+        filename_to_save = '{}_old_rollup_{}.json'.format(input_path, todays_date_formatted)
+        path_with_file = '{}{}'.format(dir_path, filename_to_save)
         with open(path_with_file, 'w') as outfile:
             json.dump(object_to_json, outfile)
 
@@ -328,7 +329,7 @@ def main():
 
     # Save json to path defined if argument given
     if args.output_rollup_path:
-        write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], args.output_rollup_path)
+        write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path)
 
     # Calculate time it took for script to run
     end_epoch_time = time.time()
