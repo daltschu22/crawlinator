@@ -147,7 +147,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
                 file_stats = {full_file_path: full_file_path, "StatInfo": stat_info} #Get stats of the file
 
-                #Determine which time value to use for oldest/newest files
+                # Determine which time value to use for oldest/newest files
                 use_time = kwargs.get('use_time')
                 if use_time == 'c':
                     file_time = file_stats["StatInfo"].st_ctime
@@ -201,7 +201,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
 
 def convert_size_human_friendly(size):
-    #Return the given bytes as a human friendly KB, MB, GB, or TB string
+    # Return the given bytes as a human friendly KB, MB, GB, or TB string
     B = float(size)
     KB = float(1024)
     MB = float(KB ** 2) # 1,048,576
@@ -230,7 +230,7 @@ def convert_size_human_friendly(size):
 
 
 def convert_seconds_human_friendly(seconds):
-    #Return a seconds value as a datetime formatted string
+    # Return a seconds value as a datetime formatted string
     mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
 
     return mod_timestamp
@@ -262,7 +262,7 @@ def filter_children_paths(path_list):
 
 def write_object_to_json_file(object_to_json, input_path, path_to_save):
     """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
-    todays_date_formatted = todays_date.strftime("%Y-%m-%d")
+    todays_date_formatted = todays_date.strftime("%Y-%m-%d %H:%M:%S'")
 
     if os.path.exists(path_to_save):
         dir_path = os.path.join(path_to_save, '')
@@ -304,7 +304,7 @@ def main():
             exit()
         stats_object.stats["ArchiveableDirs"] = []
 
-    optional_args = {} #kwargs dictionary for any optional stuff
+    optional_args = {} # kwargs dictionary for any optional stuff
     if args.days_old:
         optional_args["days_old"] = args.days_old
     if args.size_histogram:
