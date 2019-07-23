@@ -266,7 +266,8 @@ def write_object_to_json_file(object_to_json, input_path, path_to_save):
 
     if os.path.exists(path_to_save):
         dir_path = os.path.join(path_to_save, '')
-        filename_to_save = '{}_old_rollup_{}.json'.format(input_path, todays_date_formatted)
+        input_path_under = input_path.replace('/', '_')
+        filename_to_save = '{}_old_rollup_{}.json'.format(input_path_under, todays_date_formatted)
         path_with_file = '{}{}'.format(dir_path, filename_to_save)
         with open(path_with_file, 'w') as outfile:
             json.dump(object_to_json, outfile)
