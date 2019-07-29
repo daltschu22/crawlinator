@@ -137,6 +137,11 @@ def walk_dirs(stats_object, data={}, **kwargs):
             # tmp_file_list = []
             for file in files:
                 full_file_path = os.path.join(root, file)
+
+                # Filter out Thumbs.db
+                if file.startswith('Thumbs.db') or file.startswith('thumbs.db'):
+                    continue
+
                 stats_object.stats["TotalFiles"] += 1
                 try:
                     stat_info = os.stat(full_file_path)
@@ -262,12 +267,12 @@ def filter_children_paths(path_list):
 
 def write_object_to_json_file(object_to_json, input_path, path_to_save):
     """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
-    todays_date_formatted = todays_date.strftime("%Y-%m-%d %H:%M:%S'")
+    todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
 
     if os.path.exists(path_to_save):
         dir_path = os.path.join(path_to_save, '')
         input_path_under = input_path.replace('/', '_')
-        filename_to_save = '{}_old_rollup_{}.json'.format(input_path_under, todays_date_formatted)
+        filename_to_save = '{}old_rollup_{}.json'.format(input_path_under, todays_date_formatted)
         path_with_file = '{}{}'.format(dir_path, filename_to_save)
         with open(path_with_file, 'w') as outfile:
             json.dump(object_to_json, outfile)
