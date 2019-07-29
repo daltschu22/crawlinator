@@ -139,7 +139,8 @@ def walk_dirs(stats_object, data={}, **kwargs):
                 full_file_path = os.path.join(root, file)
 
                 # Filter out Thumbs.db
-                if file.startswith('Thumbs.db') or file.startswith('thumbs.db'):
+                lower_file = lower(file)
+                if file.startswith('thumbs.db') or file.startswith('.'):
                     continue
 
                 stats_object.stats["TotalFiles"] += 1
