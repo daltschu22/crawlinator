@@ -25,6 +25,7 @@ def parse_arguments():
     parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
     parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
     parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
+    parser.add_argument('--save-rollup-human-readable', action='store', type=str, dest='output_rollup_path_human_readable', metavar='/path/to/save/list', help='Path to save rollup list into')
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -138,9 +139,9 @@ def walk_dirs(stats_object, data={}, **kwargs):
             for file in files:
                 full_file_path = os.path.join(root, file)
 
-                # Filter out Thumbs.db
+                # Filter out Thumbs.db and dotfiles
                 lower_file = file.lower()
-                if file.startswith('thumbs.db') or file.startswith('.'):
+                if lower_file.startswith('thumbs.db') or lower_file.startswith('desktop.ini') or lower_file.startswith('.'):
                     continue
 
                 stats_object.stats["TotalFiles"] += 1
@@ -151,7 +152,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
                     stats_object.stats["Failures"].append(error_dict)
                     continue
 
-                file_stats = {full_file_path: full_file_path, "StatInfo": stat_info} #Get stats of the file
+                file_stats = {full_file_path: full_file_path, "StatInfo": stat_info}  # Get stats of the file
 
                 # Determine which time value to use for oldest/newest files
                 use_time = kwargs.get('use_time')
@@ -278,6 +279,18 @@ def write_object_to_json_file(object_to_json, input_path, path_to_save):
         with open(path_with_file, 'w') as outfile:
             json.dump(object_to_json, outfile)
 
+def write_files_human_readable(json_object, input_path, path_to_save):
+    """Save the list of directories that match the old_rollup criteria to a human readable file."""
+    todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
+
+    if os.path.exists(path_to_save):
+        dir_path = os.path.join(path_to_save, '')
+        input_path_under = input_path.replace('/', '_')
+        filename_to_save = '{}old_rollup_human_readable_{}.txt'.format(input_path_under, todays_date_formatted)
+        path_with_file = '{}{}'.format(dir_path, filename_to_save)
+        with open(path_with_file, 'w') as outfile:
+            for path in json_object:
+                outfile.write('{}\n'.format(path))
 
 def main():
     args = parse_arguments()  # Parse arguments
@@ -311,7 +324,7 @@ def main():
             exit()
         stats_object.stats["ArchiveableDirs"] = []
 
-    optional_args = {} # kwargs dictionary for any optional stuff
+    optional_args = {}  # kwargs dictionary for any optional stuff
     if args.days_old:
         optional_args["days_old"] = args.days_old
     if args.size_histogram:
@@ -330,13 +343,16 @@ def main():
     if stats_object.stats["TotalSize"] and human_friendly:
         stats_object.stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats_object.stats["TotalSize"])
 
-    # Filter out extraneous paths
-    fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
-    stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
+    if args.days_old:
+        # Filter out extraneous paths
+        fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
+        stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
 
     # Save json to path defined if argument given
     if args.output_rollup_path:
         write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path)
+    if args.output_rollup_path_human_readable:
+        write_files_human_readable(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path_human_readable)
 
     # Calculate time it took for script to run
     end_epoch_time = time.time()
