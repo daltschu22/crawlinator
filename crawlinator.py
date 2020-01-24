@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import sys
 import os
 import argparse
 import pprint
@@ -123,7 +122,7 @@ def walk_error(os_error, stats_object): #Garbage to get failures working because
 
 def walk_dirs(stats_object, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
-        
+
         list_of_dirs = []
         data["dirs"] = []
 
@@ -176,7 +175,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
                 if "days_old" in kwargs:
                     file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
-                    if file_days_old < kwargs.get("days_old"): 
+                    if file_days_old < kwargs.get("days_old"):
                         data["old"] = False
 
                 # tmp_file_list.append(file_stats) #Are these needed?
@@ -197,7 +196,7 @@ def walk_dirs(stats_object, data={}, **kwargs):
 
                 if "old" in tmp_dict and not tmp_dict["old"]:
                     data["old"] = False
-                    
+
                 list_of_dirs.append(tmp_dict)
                 data["dirs"] = list_of_dirs
 
@@ -365,6 +364,7 @@ def main():
         pp.pprint(stats_object.stats)
     else:
         pp.pprint(stats_object.stats)
-  
+
+
 if __name__ == "__main__":
     main()
