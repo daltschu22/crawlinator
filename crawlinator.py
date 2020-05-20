@@ -185,18 +185,18 @@ def walk_dirs(stats_object, data={}, **kwargs):
                 # tmp_file_list.append(file_stats) #Are these needed?
             # data["files"] = tmp_file_list #Are these needed?
 
-        # if dirs:
-        #     for d in dirs:
+        if dirs:
+            for d in dirs:
         #         stats_object.stats["TotalDirs"] += 1
 
-        #         tmp_dict = {}
-        #         tmp_dict["path"] = os.path.join(root, d)
-        #         tmp_dict["dirs"] = []
+                tmp_dict = {}
+                tmp_dict["path"] = os.path.join(root, d)
+                tmp_dict["dirs"] = []
 
         #         if "days_old" in kwargs:
         #             tmp_dict["old"] = True
 
-        #         walk_dirs(stats_object, tmp_dict, **kwargs)
+                walk_dirs(stats_object, tmp_dict, **kwargs)
 
         #         if "old" in tmp_dict and not tmp_dict["old"]:
         #             data["old"] = False
