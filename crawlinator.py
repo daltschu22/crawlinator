@@ -8,6 +8,8 @@ import datetime
 import checkpyversion
 import bisect
 import json
+import tracemalloc
+
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -15,16 +17,18 @@ epoch_one_day = 86400
 current_epoch = time.time()
 todays_date = datetime.datetime.today()
 
+tracemalloc.start()
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Find stale dirs")
     parser.add_argument('path', metavar='/filesysem/path', help="Filesystem path")
     parser.add_argument('-f', dest='human_friendly', action='store_true', help="Display sizes/times in a human friendly manner")
-    parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
-    parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
+    # parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
+    # parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
     parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
-    parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
-    parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
-    parser.add_argument('--save-rollup-human-readable', action='store', type=str, dest='output_rollup_path_human_readable', metavar='/path/to/save/list', help='Path to save rollup list into')
+    # parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
+    # parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
+    # parser.add_argument('--save-rollup-human-readable', action='store', type=str, dest='output_rollup_path_human_readable', metavar='/path/to/save/list', help='Path to save rollup list into')
 
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
@@ -34,7 +38,7 @@ def parse_arguments():
 
 
 class FilesystemStats:
-    #Class to hold filesystem stats
+    """Class to hold filesystem stats"""
 
     def __init__(self):
         self.stats = {}
@@ -78,8 +82,8 @@ class FilesystemStats:
 
 
     def histogram_dict_parse(self, list_of_size):
-    # Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
-    # size_in_human = list_of_size[0]
+        """Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds"""
+        # size_in_human = list_of_size[0]
         size_human_int = round(list_of_size[0])
         size_suffix_str = str(list_of_size[1])
 
@@ -99,7 +103,7 @@ class FilesystemStats:
 
 
     def check_largest_size(self, current_file_size, full_file_path, limit):
-        #Figure out the list of the top X files
+        """Figure out the list of the top X files"""
         # if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
             # print("LESS THEN!", len(stats["LargestFiles"]))
 
@@ -115,22 +119,22 @@ class FilesystemStats:
             self.stats["LargestFiles"].pop(0)
 
 
-def walk_error(os_error, stats_object): #Garbage to get failures working because os.walk is janky
+def walk_error(os_error, stats_object): 
+    """#Garbage to get failures working because os.walk is janky"""
     # error = {os_error: os_error.filename}
     stats_object.stats["Failures"].append(os_error)
 
 
 def walk_dirs(stats_object, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
-
         list_of_dirs = []
         data["dirs"] = []
 
-        if "days_old" in kwargs:
-            data["old"] = True
+        # if "days_old" in kwargs:
+            # data["old"] = True
 
         if not files and not dirs:
-            data["old"] = False
+            # data["old"] = False
             return
 
         if files:
@@ -138,45 +142,45 @@ def walk_dirs(stats_object, data={}, **kwargs):
             for file in files:
                 full_file_path = os.path.join(root, file)
 
-                # Filter out Thumbs.db and dotfiles
-                lower_file = file.lower()
-                if lower_file.startswith('thumbs.db') or lower_file.startswith('desktop.ini') or lower_file.startswith('.'):
-                    continue
+                # # Filter out Thumbs.db and dotfiles
+                # lower_file = file.lower()
+                # if lower_file.startswith('thumbs.db') or lower_file.startswith('desktop.ini') or lower_file.startswith('.'):
+                #     continue
 
-                stats_object.stats["TotalFiles"] += 1
-                try:
-                    stat_info = os.stat(full_file_path)
-                except Exception as e:
-                    error_dict = {e: full_file_path}
-                    stats_object.stats["Failures"].append(error_dict)
-                    continue
+                # stats_object.stats["TotalFiles"] += 1
+                # try:
+                #     stat_info = os.stat(full_file_path)
+                # except Exception as e:
+                #     error_dict = {e: full_file_path}
+                #     stats_object.stats["Failures"].append(error_dict)
+                #     continue
 
-                file_stats = {full_file_path: full_file_path, "StatInfo": stat_info}  # Get stats of the file
+                # file_stats = {full_file_path: full_file_path, "StatInfo": stat_info}  # Get stats of the file
 
-                # Determine which time value to use for oldest/newest files
-                use_time = kwargs.get('use_time')
-                if use_time == 'c':
-                    file_time = file_stats["StatInfo"].st_ctime
-                if use_time == 'm':
-                    file_time = file_stats["StatInfo"].st_mtime
-                if use_time == 'a':
-                    file_time = file_stats["StatInfo"].st_atime
+                # # Determine which time value to use for oldest/newest files
+                # use_time = kwargs.get('use_time')
+                # if use_time == 'c':
+                #     file_time = file_stats["StatInfo"].st_ctime
+                # if use_time == 'm':
+                #     file_time = file_stats["StatInfo"].st_mtime
+                # if use_time == 'a':
+                #     file_time = file_stats["StatInfo"].st_atime
 
-                stats_object.update_oldestfile(file_time, full_file_path)
-                stats_object.update_newestfile(file_time, full_file_path)
+                # stats_object.update_oldestfile(file_time, full_file_path)
+                # stats_object.update_newestfile(file_time, full_file_path)
 
-                current_file_size = file_stats["StatInfo"].st_size  # Get current file size
-                stats_object.stats["TotalSize"] += current_file_size  # Add to the running size total
+                # current_file_size = file_stats["StatInfo"].st_size  # Get current file size
+                # stats_object.stats["TotalSize"] += current_file_size  # Add to the running size total
 
-                if kwargs.get("LargestFilesNum"):
-                    stats_object.check_largest_size(current_file_size, full_file_path, kwargs.get("LargestFilesNum"))
+                # if kwargs.get("LargestFilesNum"):
+                #     stats_object.check_largest_size(current_file_size, full_file_path, kwargs.get("LargestFilesNum"))
 
-                stats_object.update_sizehistogram(current_file_size)
+                # stats_object.update_sizehistogram(current_file_size)
 
-                if "days_old" in kwargs:
-                    file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
-                    if file_days_old < kwargs.get("days_old"):
-                        data["old"] = False
+                # if "days_old" in kwargs:
+                #     file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
+                #     if file_days_old < kwargs.get("days_old"):
+                #         data["old"] = False
 
                 # tmp_file_list.append(file_stats) #Are these needed?
             # data["files"] = tmp_file_list #Are these needed?
@@ -317,46 +321,49 @@ def main():
 
     stats_object = FilesystemStats()
 
-    if args.days_old:
-        if args.days_old == 0:
-            print("ERROR: You must define a number of days greater than 0!")
-            exit()
-        stats_object.stats["ArchiveableDirs"] = []
+    # if args.days_old:
+    #     if args.days_old == 0:
+    #         print("ERROR: You must define a number of days greater than 0!")
+    #         exit()
+    #     stats_object.stats["ArchiveableDirs"] = []
 
     optional_args = {}  # kwargs dictionary for any optional stuff
-    if args.days_old:
-        optional_args["days_old"] = args.days_old
-    if args.size_histogram:
-        size_histogram = {}
-        stats_object.stats["SizeHistogram"] = size_histogram
-    optional_args["use_time"] = use_time
+    # if args.days_old:
+    #     optional_args["days_old"] = args.days_old
+    # if args.size_histogram:
+    #     size_histogram = {}
+    #     stats_object.stats["SizeHistogram"] = size_histogram
+    # optional_args["use_time"] = use_time
 
-    if args.top_file_count:
-        optional_args["LargestFilesNum"] = args.top_file_count
+    # if args.top_file_count:
+    #     optional_args["LargestFilesNum"] = args.top_file_count
 
     walk_dirs(stats_object, data, **optional_args)  # Recursively walk the filesystem
 
-    if stats_object.stats["TotalFiles"] > 0 and human_friendly:
-        stats_object.stats["OldestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["OldestFile"]["Age"])
-        stats_object.stats["NewestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["NewestFile"]["Age"])
-    if stats_object.stats["TotalSize"] and human_friendly:
-        stats_object.stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats_object.stats["TotalSize"])
+    # if stats_object.stats["TotalFiles"] > 0 and human_friendly:
+    #     stats_object.stats["OldestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["OldestFile"]["Age"])
+    #     stats_object.stats["NewestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["NewestFile"]["Age"])
+    # if stats_object.stats["TotalSize"] and human_friendly:
+    #     stats_object.stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats_object.stats["TotalSize"])
 
-    if args.days_old:
-        # Filter out extraneous paths
-        fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
-        stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
+    # if args.days_old:
+    #     # Filter out extraneous paths
+    #     fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
+    #     stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
 
-    # Save json to path defined if argument given
-    if args.output_rollup_path:
-        write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path, use_time)
-    if args.output_rollup_path_human_readable:
-        write_files_human_readable(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path_human_readable, use_time)
+    # # Save json to path defined if argument given
+    # if args.output_rollup_path:
+    #     write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path, use_time)
+    # if args.output_rollup_path_human_readable:
+    #     write_files_human_readable(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path_human_readable, use_time)
 
     # Calculate time it took for script to run
     end_epoch_time = time.time()
     total_execution_time = round(end_epoch_time - current_epoch, 5)
     stats_object.stats["ExecutionTime"] = total_execution_time
+
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     # Temporary print (Will make a dedicated results printing function later)
     if args.suppress_failures:
