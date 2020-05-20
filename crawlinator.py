@@ -8,12 +8,15 @@ import datetime
 import checkpyversion
 import bisect
 import json
+import tracemalloc
 
 pp = pprint.PrettyPrinter(indent=4)
 
 epoch_one_day = 86400
 current_epoch = time.time()
 todays_date = datetime.datetime.today()
+
+tracemalloc.start()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Find stale dirs")
@@ -358,6 +361,9 @@ def main():
     total_execution_time = round(end_epoch_time - current_epoch, 5)
     stats_object.stats["ExecutionTime"] = total_execution_time
 
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+    
     # Temporary print (Will make a dedicated results printing function later)
     if args.suppress_failures:
         stats_object.stats["Failures"] = "Suppressed!"
