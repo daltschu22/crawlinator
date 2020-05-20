@@ -46,10 +46,10 @@ class FilesystemStats:
         self.stats["TotalFiles"] = 0
         self.stats["TotalSize"] = 0
         self.stats["TotalDirs"] = 1
-        self.stats["OldestFile"] = {"Path": None, "Age": None}
-        self.stats["NewestFile"] = {"Path": None, "Age": None}
+        # self.stats["OldestFile"] = {"Path": None, "Age": None}
+        # self.stats["NewestFile"] = {"Path": None, "Age": None}
         self.stats["Failures"] = []
-        self.stats["LargestFiles"] = []
+        # self.stats["LargestFiles"] = []
         self.stats["ExecutionTime"] = None
 
 
@@ -137,10 +137,10 @@ def walk_dirs(stats_object, data={}, **kwargs):
             # data["old"] = False
             return
 
-        if files:
-            # tmp_file_list = []
-            for file in files:
-                full_file_path = os.path.join(root, file)
+        # if files:
+        #     # tmp_file_list = []
+        #     for file in files:
+        #         full_file_path = os.path.join(root, file)
 
                 # # Filter out Thumbs.db and dotfiles
                 # lower_file = file.lower()
@@ -185,27 +185,27 @@ def walk_dirs(stats_object, data={}, **kwargs):
                 # tmp_file_list.append(file_stats) #Are these needed?
             # data["files"] = tmp_file_list #Are these needed?
 
-        if dirs:
-            for d in dirs:
-                stats_object.stats["TotalDirs"] += 1
+        # if dirs:
+        #     for d in dirs:
+        #         stats_object.stats["TotalDirs"] += 1
 
-                tmp_dict = {}
-                tmp_dict["path"] = os.path.join(root, d)
-                tmp_dict["dirs"] = []
+        #         tmp_dict = {}
+        #         tmp_dict["path"] = os.path.join(root, d)
+        #         tmp_dict["dirs"] = []
 
-                if "days_old" in kwargs:
-                    tmp_dict["old"] = True
+        #         if "days_old" in kwargs:
+        #             tmp_dict["old"] = True
 
-                walk_dirs(stats_object, tmp_dict, **kwargs)
+        #         walk_dirs(stats_object, tmp_dict, **kwargs)
 
-                if "old" in tmp_dict and not tmp_dict["old"]:
-                    data["old"] = False
+        #         if "old" in tmp_dict and not tmp_dict["old"]:
+        #             data["old"] = False
 
-                list_of_dirs.append(tmp_dict)
-                data["dirs"] = list_of_dirs
+        #         list_of_dirs.append(tmp_dict)
+        #         data["dirs"] = list_of_dirs
 
-                if "old" in data and data["old"]:
-                    stats_object.stats["ArchiveableDirs"].append(tmp_dict["path"])
+        #         if "old" in data and data["old"]:
+        #             stats_object.stats["ArchiveableDirs"].append(tmp_dict["path"])
 
         break
 
