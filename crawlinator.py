@@ -28,6 +28,7 @@ def parse_arguments():
     parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
     # parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
     # parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
+    parser.add_argument('--save-list', action='store', type=str, dest='gid_list_path', metavar='/path/to/save/json', help='Path to save files to be changed list into')
     # parser.add_argument('--save-rollup-human-readable', action='store', type=str, dest='output_rollup_path_human_readable', metavar='/path/to/save/list', help='Path to save rollup list into')
 
     # time_group = parser.add_mutually_exclusive_group()
@@ -221,7 +222,7 @@ def main():
     args = parse_arguments()  # Parse arguments
 
     og_path = args.path
-    human_friendly = args.human_friendly
+    # human_friendly = args.human_friendly
 
     path_perms = check_read_perms(og_path)
     if not path_perms:
@@ -229,7 +230,7 @@ def main():
         exit()
 
 
-    use_time = 'a'
+    # use_time = 'a'
 
     data = {}
     data["path"] = og_path
@@ -256,6 +257,10 @@ def main():
         pp.pprint(stats_object.stats)
     else:
         pp.pprint(stats_object.stats)
+
+    if args.gid_list_path:
+        with open(args.gid_list_path, 'w') as out:
+            out.write("\n".join(stats_object.bad_files))
 
 
 if __name__ == "__main__":
