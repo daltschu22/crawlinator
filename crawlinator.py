@@ -6,7 +6,7 @@ import pprint
 import time
 import datetime
 import checkpyversion
-import bisect
+# import bisect
 import json
 import tracemalloc
 
@@ -30,9 +30,9 @@ def parse_arguments():
     # parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
     # parser.add_argument('--save-rollup-human-readable', action='store', type=str, dest='output_rollup_path_human_readable', metavar='/path/to/save/list', help='Path to save rollup list into')
 
-    time_group = parser.add_mutually_exclusive_group()
-    time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
-    time_group.add_argument('-c', dest='use_c_time', action='store_true', help="Use c_time instead of a_time")
+    # time_group = parser.add_mutually_exclusive_group()
+    # time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
+    # time_group.add_argument('-c', dest='use_c_time', action='store_true', help="Use c_time instead of a_time")
 
     return parser.parse_args()
 
@@ -43,80 +43,84 @@ class FilesystemStats:
     def __init__(self):
         self.stats = {}
 
-        self.stats["TotalFiles"] = 0
-        self.stats["TotalSize"] = 0
-        self.stats["TotalDirs"] = 1
+        # self.stats["TotalFiles"] = 0
+        # self.stats["TotalSize"] = 0
+        # self.stats["TotalDirs"] = 1
         # self.stats["OldestFile"] = {"Path": None, "Age": None}
         # self.stats["NewestFile"] = {"Path": None, "Age": None}
+        self.stats["BadGIDs"] = 0
         self.stats["Failures"] = []
         # self.stats["LargestFiles"] = []
         self.stats["ExecutionTime"] = None
 
 
-    def update_oldestfile(self, file_time, full_file_path):
-        #Check the current file against the running oldest file
-        if self.stats["OldestFile"]["Age"] == None:
-            self.stats["OldestFile"]["Age"] = file_time
-            self.stats["OldestFile"]["Path"] = full_file_path
-
-        if self.stats["OldestFile"]["Age"] > file_time:
-            self.stats["OldestFile"]["Age"] = file_time
-            self.stats["OldestFile"]["Path"] = full_file_path
+        self.bad_files = []
 
 
-    def update_newestfile(self, file_time, full_file_path):
-        #Check the current file against the running newest file
-        if self.stats["NewestFile"]["Age"] == None:
-            self.stats["NewestFile"]["Age"] = file_time
-            self.stats["NewestFile"]["Path"] = full_file_path
+    # def update_oldestfile(self, file_time, full_file_path):
+    #     #Check the current file against the running oldest file
+    #     if self.stats["OldestFile"]["Age"] == None:
+    #         self.stats["OldestFile"]["Age"] = file_time
+    #         self.stats["OldestFile"]["Path"] = full_file_path
 
-        if self.stats["NewestFile"]["Age"] < file_time:
-            self.stats["NewestFile"]["Age"] = file_time
-            self.stats["NewestFile"]["Path"] = full_file_path
-
-
-    def update_sizehistogram(self, current_file_size):
-        if "SizeHistogram" in self.stats:
-            human_readable_size_list = convert_size_human_friendly(current_file_size)
-            self.histogram_dict_parse(human_readable_size_list)
+    #     if self.stats["OldestFile"]["Age"] > file_time:
+    #         self.stats["OldestFile"]["Age"] = file_time
+    #         self.stats["OldestFile"]["Path"] = full_file_path
 
 
-    def histogram_dict_parse(self, list_of_size):
-        """Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds"""
-        # size_in_human = list_of_size[0]
-        size_human_int = round(list_of_size[0])
-        size_suffix_str = str(list_of_size[1])
+    # def update_newestfile(self, file_time, full_file_path):
+    #     #Check the current file against the running newest file
+    #     if self.stats["NewestFile"]["Age"] == None:
+    #         self.stats["NewestFile"]["Age"] = file_time
+    #         self.stats["NewestFile"]["Path"] = full_file_path
 
-        if size_suffix_str == 'Byte' or size_suffix_str == 'Bytes':
-            if "1KB" not in self.stats["SizeHistogram"]:
-                self.stats["SizeHistogram"]["1KB"] = 1
-            else:
-                self.stats["SizeHistogram"]["1KB"] += 1
-        else:
-            size_rounded_pow = 1 << (size_human_int - 1).bit_length() #Black magic to find nearest power of 2
-            size_rounded_with_suffix = str(size_rounded_pow) + size_suffix_str
-
-            if size_rounded_with_suffix not in self.stats["SizeHistogram"]:
-                self.stats["SizeHistogram"][size_rounded_with_suffix] = 1
-            elif size_rounded_with_suffix in self.stats["SizeHistogram"]:
-                self.stats["SizeHistogram"][size_rounded_with_suffix] += 1
+    #     if self.stats["NewestFile"]["Age"] < file_time:
+    #         self.stats["NewestFile"]["Age"] = file_time
+    #         self.stats["NewestFile"]["Path"] = full_file_path
 
 
-    def check_largest_size(self, current_file_size, full_file_path, limit):
-        """Figure out the list of the top X files"""
-        # if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
-            # print("LESS THEN!", len(stats["LargestFiles"]))
+    # # def update_sizehistogram(self, current_file_size):
+    # #     if "SizeHistogram" in self.stats:
+    # #         human_readable_size_list = convert_size_human_friendly(current_file_size)
+    # #         self.histogram_dict_parse(human_readable_size_list)
 
-        file_size_tuple = (current_file_size, full_file_path)
-        if len(self.stats["LargestFiles"]) == 0:
-            self.stats["LargestFiles"].insert(0, file_size_tuple)
 
-        bisect_num = bisect.bisect(self.stats["LargestFiles"], file_size_tuple)
+    # def histogram_dict_parse(self, list_of_size):
+    #     """Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds"""
+    #     # size_in_human = list_of_size[0]
+    #     size_human_int = round(list_of_size[0])
+    #     size_suffix_str = str(list_of_size[1])
 
-        self.stats["LargestFiles"].insert(bisect_num, file_size_tuple)
+    #     if size_suffix_str == 'Byte' or size_suffix_str == 'Bytes':
+    #         if "1KB" not in self.stats["SizeHistogram"]:
+    #             self.stats["SizeHistogram"]["1KB"] = 1
+    #         else:
+    #             self.stats["SizeHistogram"]["1KB"] += 1
+    #     else:
+    #         size_rounded_pow = 1 << (size_human_int - 1).bit_length() #Black magic to find nearest power of 2
+    #         size_rounded_with_suffix = str(size_rounded_pow) + size_suffix_str
 
-        if len(self.stats["LargestFiles"]) == limit:
-            self.stats["LargestFiles"].pop(0)
+    #         if size_rounded_with_suffix not in self.stats["SizeHistogram"]:
+    #             self.stats["SizeHistogram"][size_rounded_with_suffix] = 1
+    #         elif size_rounded_with_suffix in self.stats["SizeHistogram"]:
+    #             self.stats["SizeHistogram"][size_rounded_with_suffix] += 1
+
+
+    # def check_largest_size(self, current_file_size, full_file_path, limit):
+    #     """Figure out the list of the top X files"""
+    #     # if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
+    #         # print("LESS THEN!", len(stats["LargestFiles"]))
+
+    #     file_size_tuple = (current_file_size, full_file_path)
+    #     if len(self.stats["LargestFiles"]) == 0:
+    #         self.stats["LargestFiles"].insert(0, file_size_tuple)
+
+    #     bisect_num = bisect.bisect(self.stats["LargestFiles"], file_size_tuple)
+
+    #     self.stats["LargestFiles"].insert(bisect_num, file_size_tuple)
+
+    #     if len(self.stats["LargestFiles"]) == limit:
+    #         self.stats["LargestFiles"].pop(0)
 
 
 def walk_error(os_error, stats_object): 
@@ -125,22 +129,129 @@ def walk_error(os_error, stats_object):
     stats_object.stats["Failures"].append(os_error)
 
 
+bad_gids = {
+    63,
+    40,
+    50,
+    54,
+    65534,
+    99,
+    52,
+    0,
+    10,
+    16,
+    41,
+    53,
+    56,
+    61,
+    62,
+    64,
+    65,
+    66,
+    67,
+    71,
+    72,
+    77,
+    78,
+    79,
+    80,
+    91,
+    94,
+    95,
+    96,
+    97,
+    98,
+    101,
+    102,
+    104,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    201,
+    202,
+    208,
+    209,
+    210,
+    460,
+    461,
+    462,
+    463,
+    466,
+    468,
+    470,
+    471,
+    472,
+    473,
+    477,
+    479,
+    480,
+    481,
+    482,
+    483,
+    484,
+    485,
+    488,
+    506,
+    601,
+    602,
+    603,
+    605,
+    607,
+    608,
+    610,
+    611,
+    615,
+    616,
+    617,
+    618,
+    619,
+    622,
+    623,
+    624,
+    625,
+    626,
+    627,
+    628,
+    629,
+    630,
+    631,
+    632,
+    633,
+    634,
+    635,
+    636,
+    649,
+    650,
+    660,
+    670,
+    671,
+    801,
+    901,
+    1001
+}
+
 def walk_dirs(stats_object, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
-        list_of_dirs = []
-        data["dirs"] = []
+        # list_of_dirs = []
+        # data["dirs"] = []
 
         # if "days_old" in kwargs:
             # data["old"] = True
 
-        if not files and not dirs:
-            # data["old"] = False
-            return
+        # if not files and not dirs:
+        #     # data["old"] = False
+        #     return
 
-        # if files:
+        if files:
         #     # tmp_file_list = []
-        #     for file in files:
-        #         full_file_path = os.path.join(root, file)
+            for file in files:
+                full_file_path = os.path.join(root, file)
 
                 # # Filter out Thumbs.db and dotfiles
                 # lower_file = file.lower()
@@ -148,12 +259,17 @@ def walk_dirs(stats_object, data={}, **kwargs):
                 #     continue
 
                 # stats_object.stats["TotalFiles"] += 1
-                # try:
-                #     stat_info = os.stat(full_file_path)
-                # except Exception as e:
-                #     error_dict = {e: full_file_path}
-                #     stats_object.stats["Failures"].append(error_dict)
-                #     continue
+                try:
+                    stat_info = os.stat(full_file_path)
+                    # os.stat(full_file_path)
+                except Exception as e:
+                    error_dict = {e: full_file_path}
+                    stats_object.stats["Failures"].append(error_dict)
+                    continue
+
+                if stat_info.st_gid in bad_gids:
+                    stats_object.stats["BadGIDs"] += 1
+                    stats_object.bad_files.append(full_file_path)
 
                 # file_stats = {full_file_path: full_file_path, "StatInfo": stat_info}  # Get stats of the file
 
@@ -210,40 +326,40 @@ def walk_dirs(stats_object, data={}, **kwargs):
         break
 
 
-def convert_size_human_friendly(size):
-    # Return the given bytes as a human friendly KB, MB, GB, or TB string
-    B = float(size)
-    KB = float(1024)
-    MB = float(KB ** 2) # 1,048,576
-    GB = float(KB ** 3) # 1,073,741,824
-    TB = float(KB ** 4) # 1,099,511,627,776
+# def convert_size_human_friendly(size):
+#     # Return the given bytes as a human friendly KB, MB, GB, or TB string
+#     B = float(size)
+#     KB = float(1024)
+#     MB = float(KB ** 2) # 1,048,576
+#     GB = float(KB ** 3) # 1,073,741,824
+#     TB = float(KB ** 4) # 1,099,511,627,776
 
-    size_list = []
+#     size_list = []
 
-    if B < KB:
-        size_list.insert(0, B)
-        size_list.insert(1, '{0}'.format('Bytes' if 0 == B > 1 else 'Byte'))
-    elif KB <= B < MB:
-        size_list.insert(0, B/KB)
-        size_list.insert(1, 'KiB')
-    elif MB <= B < GB:
-        size_list.insert(0, B/MB)
-        size_list.insert(1, 'MiB')
-    elif GB <= B < TB:
-        size_list.insert(0, B/GB)
-        size_list.insert(1, 'GiB')
-    elif TB <= B:
-        size_list.insert(0, B/TB)
-        size_list.insert(1, 'TiB')
+#     if B < KB:
+#         size_list.insert(0, B)
+#         size_list.insert(1, '{0}'.format('Bytes' if 0 == B > 1 else 'Byte'))
+#     elif KB <= B < MB:
+#         size_list.insert(0, B/KB)
+#         size_list.insert(1, 'KiB')
+#     elif MB <= B < GB:
+#         size_list.insert(0, B/MB)
+#         size_list.insert(1, 'MiB')
+#     elif GB <= B < TB:
+#         size_list.insert(0, B/GB)
+#         size_list.insert(1, 'GiB')
+#     elif TB <= B:
+#         size_list.insert(0, B/TB)
+#         size_list.insert(1, 'TiB')
 
-    return size_list
+#     return size_list
 
 
-def convert_seconds_human_friendly(seconds):
-    # Return a seconds value as a datetime formatted string
-    mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
+# def convert_seconds_human_friendly(seconds):
+#     # Return a seconds value as a datetime formatted string
+#     mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
 
-    return mod_timestamp
+#     return mod_timestamp
 
 
 def check_read_perms(path):
@@ -252,48 +368,48 @@ def check_read_perms(path):
     return access
 
 
-def filter_children_paths(path_list):
-    """ Iterate through list of paths and remove any extraneous ones."""
-    # Sort list
-    sorted_path_list = sorted(path_list)
+# def filter_children_paths(path_list):
+#     """ Iterate through list of paths and remove any extraneous ones."""
+#     # Sort list
+#     sorted_path_list = sorted(path_list)
 
-    i = 0
-    while i < len(sorted_path_list):
-        if i == (len(sorted_path_list) - 1):
-            break
-        if '{}/'.format(sorted_path_list[i]) in '{}/'.format(sorted_path_list[i+1]):
-            print("DELETING {}".format(sorted_path_list[i+1]))
-            del sorted_path_list[i+1]
-        else:
-            i += 1
+#     i = 0
+#     while i < len(sorted_path_list):
+#         if i == (len(sorted_path_list) - 1):
+#             break
+#         if '{}/'.format(sorted_path_list[i]) in '{}/'.format(sorted_path_list[i+1]):
+#             print("DELETING {}".format(sorted_path_list[i+1]))
+#             del sorted_path_list[i+1]
+#         else:
+#             i += 1
 
-    return sorted_path_list
+#     return sorted_path_list
 
 
-def write_object_to_json_file(object_to_json, input_path, path_to_save, use_time):
-    """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
-    todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
+# def write_object_to_json_file(object_to_json, input_path, path_to_save, use_time):
+#     """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
+#     todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
 
-    if os.path.exists(path_to_save):
-        dir_path = os.path.join(path_to_save, '')
-        input_path_under = input_path.replace('/', '_')
-        filename_to_save = '{}_old_rollup_{}time_{}.json'.format(input_path_under, use_time, todays_date_formatted)
-        path_with_file = '{}{}'.format(dir_path, filename_to_save)
-        with open(path_with_file, 'w') as outfile:
-            json.dump(object_to_json, outfile)
+#     if os.path.exists(path_to_save):
+#         dir_path = os.path.join(path_to_save, '')
+#         input_path_under = input_path.replace('/', '_')
+#         filename_to_save = '{}_old_rollup_{}time_{}.json'.format(input_path_under, use_time, todays_date_formatted)
+#         path_with_file = '{}{}'.format(dir_path, filename_to_save)
+#         with open(path_with_file, 'w') as outfile:
+#             json.dump(object_to_json, outfile)
 
-def write_files_human_readable(json_object, input_path, path_to_save, use_time):
-    """Save the list of directories that match the old_rollup criteria to a human readable file."""
-    todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
+# def write_files_human_readable(json_object, input_path, path_to_save, use_time):
+#     """Save the list of directories that match the old_rollup criteria to a human readable file."""
+#     todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
 
-    if os.path.exists(path_to_save):
-        dir_path = os.path.join(path_to_save, '')
-        input_path_under = input_path.replace('/', '_')
-        filename_to_save = '{}_old_rollup_human_readable_{}time_{}.txt'.format(input_path_under, use_time, todays_date_formatted)
-        path_with_file = '{}{}'.format(dir_path, filename_to_save)
-        with open(path_with_file, 'w') as outfile:
-            for path in json_object:
-                outfile.write('{}\n'.format(path))
+#     if os.path.exists(path_to_save):
+#         dir_path = os.path.join(path_to_save, '')
+#         input_path_under = input_path.replace('/', '_')
+#         filename_to_save = '{}_old_rollup_human_readable_{}time_{}.txt'.format(input_path_under, use_time, todays_date_formatted)
+#         path_with_file = '{}{}'.format(dir_path, filename_to_save)
+#         with open(path_with_file, 'w') as outfile:
+#             for path in json_object:
+#                 outfile.write('{}\n'.format(path))
 
 def main():
     args = parse_arguments()  # Parse arguments
@@ -306,15 +422,15 @@ def main():
         print("ERROR: You dont have permission, or that path doesnt exist!")
         exit()
 
-    if args.use_c_time:
-        print("Using C_TIME")
-        use_time = 'c'
-    elif args.use_m_time:
-        print("Using M_TIME")
-        use_time = 'm'
-    else:
-        print("Using default A_TIME")
-        use_time = 'a'
+    # if args.use_c_time:
+    #     print("Using C_TIME")
+    #     use_time = 'c'
+    # elif args.use_m_time:
+    #     print("Using M_TIME")
+    #     use_time = 'm'
+    # else:
+    #     print("Using default A_TIME")
+    use_time = 'a'
 
     data = {}
     data["path"] = og_path
