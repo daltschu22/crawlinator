@@ -58,14 +58,6 @@ class FilesystemStats:
         self.bad_files = []
 
 
-
-
-def walk_error(os_error, stats_object): 
-    """#Garbage to get failures working because os.walk is janky"""
-    # error = {os_error: os_error.filename}
-    stats_object.stats["Failures"].append(os_error)
-
-
 bad_gids = {
     63,
     40,
@@ -173,17 +165,17 @@ bad_gids = {
     1001
 }
 
+def walk_error(os_error, stats_object):
+    """#Garbage to get failures working because os.walk is janky"""
+    # error = {os_error: os_error.filename}
+    stats_object.stats["Failures"].append(os_error)
+
+
 def walk_dirs(stats_object, data={}, **kwargs):
     for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
-        # list_of_dirs = []
-        # data["dirs"] = []
-
-
         if files:
-        #     # tmp_file_list = []
             for file in files:
                 full_file_path = os.path.join(root, file)
-
                 try:
                     stat_info = os.stat(full_file_path)
                 except Exception as e:
@@ -195,21 +187,15 @@ def walk_dirs(stats_object, data={}, **kwargs):
                     stats_object.stats["BadGIDs"] += 1
                     stats_object.bad_files.append(full_file_path)
 
-
-
         if dirs:
             for d in dirs:
-
                 tmp_dict = {}
                 tmp_dict["path"] = os.path.join(root, d)
                 tmp_dict["dirs"] = []
 
-
                 walk_dirs(stats_object, tmp_dict, **kwargs)
 
         break
-
-
 
 
 def check_read_perms(path):
