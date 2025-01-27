@@ -24,6 +24,7 @@ def parse_arguments():
     parser.add_argument('-f', dest='human_friendly', action='store_true', help="Display sizes/times in a human friendly manner")
     parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
     parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
+    parser.add_argument('--time-histogram', action='store_true', help="Display file ages in a histogram with size totals")
     parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
     parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
     parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
@@ -50,6 +51,9 @@ class FilesystemStats:
         self.stats["Failures"] = []
         self.stats["LargestFiles"] = []
         self.stats["ExecutionTime"] = None
+
+        # Initialize TimeHistogram dict if needed in update_timehistogram
+        self.time_window_size = 30  # Window size in days
 
 
     def update_oldestfile(self, file_time, full_file_path):
@@ -78,6 +82,33 @@ class FilesystemStats:
         if "SizeHistogram" in self.stats:
             human_readable_size_list = convert_size_human_friendly(current_file_size)
             self.histogram_dict_parse(human_readable_size_list)
+
+
+    def update_timehistogram(self, file_time, file_size):
+        if "TimeHistogram" not in self.stats:
+            self.stats["TimeHistogram"] = {}
+
+        file_age_days = (current_epoch - file_time) / epoch_one_day
+        
+        # Special handling for files modified today
+        if file_age_days <= 1:
+            window_name = "Today"
+        else:
+            # Find the appropriate 30-day window
+            window_number = 1 << (int(file_age_days / self.time_window_size) - 1).bit_length()
+            if window_number == 0:
+                window_number = 1
+            window_name = f"{window_number * self.time_window_size} days"
+
+        # Initialize the window if it doesn't exist
+        if window_name not in self.stats["TimeHistogram"]:
+            self.stats["TimeHistogram"][window_name] = {
+                "count": 0,
+                "total_size": 0
+            }
+        
+        self.stats["TimeHistogram"][window_name]["count"] += 1
+        self.stats["TimeHistogram"][window_name]["total_size"] += file_size
 
 
     def histogram_dict_parse(self, list_of_size):
@@ -175,6 +206,9 @@ def walk_dirs(stats_object, data={}, **kwargs):
                     stats_object.check_largest_size(current_file_size, full_file_path, kwargs.get("LargestFilesNum"))
 
                 stats_object.update_sizehistogram(current_file_size)
+                
+                if kwargs.get("time_histogram"):
+                    stats_object.update_timehistogram(file_time, current_file_size)
 
                 if "days_old" in kwargs:
                     file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
@@ -332,6 +366,8 @@ def main():
     if args.size_histogram:
         size_histogram = {}
         stats_object.stats["SizeHistogram"] = size_histogram
+    if args.time_histogram:
+        optional_args["time_histogram"] = True
     optional_args["use_time"] = use_time
 
     if args.top_file_count:
@@ -344,6 +380,11 @@ def main():
         stats_object.stats["NewestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["NewestFile"]["Age"])
     if stats_object.stats["TotalSize"] and human_friendly:
         stats_object.stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats_object.stats["TotalSize"])
+        # Convert sizes in TimeHistogram to human friendly format if it exists
+        if "TimeHistogram" in stats_object.stats:
+            for window in stats_object.stats["TimeHistogram"]:
+                size = stats_object.stats["TimeHistogram"][window]["total_size"]
+                stats_object.stats["TimeHistogram"][window]["total_size_human"] = convert_size_human_friendly(size)
 
     if args.days_old:
         # Filter out extraneous paths
