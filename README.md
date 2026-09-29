@@ -42,8 +42,33 @@ PowerShell. Use `python` in place of `python3` where appropriate.
 | `--save-rollup DIR` | Save the outermost candidate paths as a JSON array in an existing directory. Requires `--old-rollup`. |
 | `--save-rollup-human-readable DIR` | Save the same candidates as a UTF-8 text list. Requires `--old-rollup`. |
 | `--profile-memory` | Enable Python allocation tracing and include current/peak byte counts. |
+| `--workers N` | Scan up to N directories concurrently. Requires a positive integer; default: 1. |
 
 Get the complete CLI help with `python3 crawlinator.py --help`.
+
+## Faster scans
+
+For storage where metadata requests spend time waiting, try parallel directory
+scanning:
+
+```bash
+python3 crawlinator.py /path/to/scan --old-rollup 90 --workers 4
+```
+
+Compare `ExecutionTime` with 1, 4, and 8 workers on the same tree. One worker is
+the default and runs without a thread pool. Extra workers can help overlap
+network or disk waits, but can slow down a scan of cached local files. A single
+large directory is still processed by one worker; concurrency comes from
+scanning different directories. Keep `--profile-memory` off when measuring speed,
+and account for filesystem caching when comparing repeated runs.
+
+At most N directory jobs are submitted at once. Each worker collects its own
+statistics; the coordinator merges counts, size buckets, and largest-file lists.
+Parent eligibility is decided only after all child subtrees finish. Results for
+an unchanged tree are independent of worker completion order, including tied
+timestamps and failure ordering. Ctrl+C cancels queued jobs and asks active
+workers to stop between filesystem operations; an operation already blocked in
+the filesystem must return before its worker can stop.
 
 ## What qualifies as stale?
 

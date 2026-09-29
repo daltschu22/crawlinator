@@ -16,9 +16,12 @@ import sys
 import tempfile
 import time
 import tracemalloc
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event
 from typing import Sequence
 
 SECONDS_PER_DAY = 86_400
@@ -33,6 +36,7 @@ class ScanOptions:
     top_file_count: int | None = None
     size_histogram: bool = False
     exclusions: tuple[str, ...] = ()
+    workers: int = 1
 
     def __post_init__(self):
         for name in ("days_old", "top_file_count"):
@@ -41,6 +45,8 @@ class ScanOptions:
                 raise ValueError(f"{name} must be a positive integer")
         if self.use_time not in TIME_NAMES:
             raise ValueError("use_time must be 'a', 'm', or 'c'")
+        if not isinstance(self.workers, int) or self.workers <= 0:
+            raise ValueError("workers must be a positive integer")
 
 
 @dataclass
@@ -67,10 +73,10 @@ class DirectorySummary:
 
 @dataclass
 class DirectoryFrame:
-    path: Path
+    path: str
+    parent: DirectoryFrame | None = None
     summary: DirectorySummary = field(default_factory=DirectorySummary)
-    children: list[Path] | None = None
-    next_child: int = 0
+    remaining_children: int = 0
 
 
 class FilesystemStats:
@@ -94,10 +100,10 @@ class FilesystemStats:
         self._largest: list[tuple[int, str]] = []
         self._histogram: dict[int, int] = {}
 
-    def record_failure(self, path: Path, operation: str, error: OSError):
+    def record_failure(self, path: str, operation: str, error: OSError):
         self.stats["Failures"].append(
             {
-                "Path": str(path),
+                "Path": path,
                 "Operation": operation,
                 "Error": str(error),
                 "Errno": error.errno,
@@ -105,32 +111,70 @@ class FilesystemStats:
         )
         self.stats["FailureCount"] += 1
 
-    def record_file(self, path: Path, info: os.stat_result, options: ScanOptions) -> float:
+    def record_timestamp(self, path: str, timestamp: float):
+        # Tie-break by path so completion order never changes the report.
+        for key, older in (("OldestFile", True), ("NewestFile", False)):
+            current = self.stats[key]["Age"]
+            if (
+                current is None
+                or (timestamp < current if older else timestamp > current)
+                or (timestamp == current and path < self.stats[key]["Path"])
+            ):
+                self.stats[key] = {"Path": path, "Age": timestamp}
+
+    def record_size(self, item: tuple[int, str], limit: int):
+        if len(self._largest) < limit:
+            heapq.heappush(self._largest, item)
+        else:
+            heapq.heappushpop(self._largest, item)
+
+    def record_file(self, path: str, info: os.stat_result, options: ScanOptions) -> float:
         timestamp = getattr(info, f"st_{options.use_time}time")
         self.stats["TotalFiles"] += 1
         self.stats["TotalSize"] += info.st_size
-        for key, older in (("OldestFile", True), ("NewestFile", False)):
-            current = self.stats[key]["Age"]
-            if current is None or (timestamp < current if older else timestamp > current):
-                self.stats[key] = {"Path": str(path), "Age": timestamp}
+        self.record_timestamp(path, timestamp)
         if options.top_file_count is not None:
-            item = (info.st_size, str(path))
-            if len(self._largest) < options.top_file_count:
-                heapq.heappush(self._largest, item)
-            else:
-                heapq.heappushpop(self._largest, item)
+            self.record_size((info.st_size, path), options.top_file_count)
         if options.size_histogram:
             # Inclusive upper bounds, computed before any unit conversion.
             bound = max(1024, 1 << max(0, info.st_size - 1).bit_length())
             self._histogram[bound] = self._histogram.get(bound, 0) + 1
         return timestamp
 
+    def merge(self, other: FilesystemStats, options: ScanOptions):
+        """Merge one directory's private aggregates on the coordinator thread."""
+        for key in ("TotalFiles", "TotalSize", "TotalDirs", "DiscoveredEntries", "FailureCount"):
+            self.stats[key] += other.stats[key]
+        self.stats["Failures"].extend(other.stats["Failures"])
+        for key, count in other.stats["SkippedEntries"].items():
+            self.stats["SkippedEntries"][key] += count
+        for key in ("OldestFile", "NewestFile"):
+            candidate = other.stats[key]
+            if candidate["Age"] is not None:
+                self.record_timestamp(candidate["Path"], candidate["Age"])
+        if options.top_file_count is not None:
+            # A directory's top N contains every entry that could enter the global top N.
+            for item in other._largest:
+                self.record_size(item, options.top_file_count)
+        for bound, count in other._histogram.items():
+            self._histogram[bound] = self._histogram.get(bound, 0) + count
+
     def finish(self, options: ScanOptions):
+        self.stats["Failures"].sort(
+            key=lambda item: (item["Path"], item["Operation"], item["Error"])
+        )
         self.stats["LargestFiles"] = sorted(self._largest, key=lambda item: (-item[0], item[1]))
         if options.size_histogram:
             self.stats["SizeHistogram"] = {
                 size_bucket_label(bound): count for bound, count in sorted(self._histogram.items())
             }
+
+
+@dataclass
+class DirectoryResult:
+    summary: DirectorySummary = field(default_factory=DirectorySummary)
+    children: list[str] = field(default_factory=list)
+    stats: FilesystemStats = field(default_factory=FilesystemStats)
 
 
 def is_link(info: os.stat_result) -> bool:
@@ -140,46 +184,90 @@ def is_link(info: os.stat_result) -> bool:
     )
 
 
-def inspect_directory(frame: DirectoryFrame, stats: FilesystemStats, options: ScanOptions):
-    """Read one directory, closing its iterator before visiting its children."""
-    frame.children = []
+def inspect_directory(path: str, options: ScanOptions, stopped: Event) -> DirectoryResult:
+    """Read one directory into private aggregates; never wait for child jobs."""
+    result = DirectoryResult()
+    stats = result.stats
+    summary = result.summary
+    if stopped.is_set():
+        summary.complete = False
+        return result
     try:
         # Recheck queued directories in case they were replaced during the scan.
-        info = frame.path.lstat()
+        info = os.lstat(path)
         if is_link(info):
             stats.stats["SkippedEntries"]["Symlinks"] += 1
-            frame.summary.complete = False
-            return
+            summary.complete = False
+            return result
         if not stat.S_ISDIR(info.st_mode):
-            raise NotADirectoryError(f"Directory changed during scan: {frame.path}")
-        with os.scandir(frame.path) as entries:
+            raise NotADirectoryError(f"Directory changed during scan: {path}")
+        with os.scandir(path) as entries:
             stats.stats["TotalDirs"] += 1
             for entry in entries:
+                if stopped.is_set():
+                    summary.complete = False
+                    break
                 stats.stats["DiscoveredEntries"] += 1
-                path = Path(entry.path)
-                if any(fnmatch.fnmatchcase(entry.name, pattern) for pattern in options.exclusions):
+                if options.exclusions and any(
+                    fnmatch.fnmatchcase(entry.name, pattern) for pattern in options.exclusions
+                ):
                     stats.stats["SkippedEntries"]["Excluded"] += 1
-                    frame.summary.complete = False
+                    summary.complete = False
                     continue
                 try:
                     info = entry.stat(follow_symlinks=False)
                 except OSError as error:
-                    stats.record_failure(path, "stat", error)
-                    frame.summary.complete = False
+                    stats.record_failure(entry.path, "stat", error)
+                    summary.complete = False
                     continue
                 if is_link(info):
                     stats.stats["SkippedEntries"]["Symlinks"] += 1
-                    frame.summary.complete = False
+                    summary.complete = False
                 elif stat.S_ISDIR(info.st_mode):
-                    frame.children.append(path)
+                    result.children.append(entry.path)
                 elif stat.S_ISREG(info.st_mode):
-                    frame.summary.include_time(stats.record_file(path, info, options))
+                    summary.include_time(stats.record_file(entry.path, info, options))
                 else:
                     stats.stats["SkippedEntries"]["SpecialFiles"] += 1
-                    frame.summary.complete = False
+                    summary.complete = False
     except OSError as error:
-        stats.record_failure(frame.path, "read directory", error)
-        frame.summary.complete = False
+        stats.record_failure(path, "read directory", error)
+        summary.complete = False
+    return result
+
+
+def scan_directories(root: DirectoryFrame, options: ScanOptions):
+    """Yield completed directories, with at most `workers` submitted jobs."""
+    ready = [root]
+    pending = {}
+    stopped = Event()
+    executor = (
+        ThreadPoolExecutor(max_workers=options.workers, thread_name_prefix="crawlinator")
+        if options.workers > 1
+        else None
+    )
+    try:
+        while ready or pending:
+            if executor is None:
+                frame = ready.pop()
+                completed = [(frame, inspect_directory(frame.path, options, stopped))]
+            else:
+                while ready and len(pending) < options.workers:
+                    frame = ready.pop()
+                    future = executor.submit(inspect_directory, frame.path, options, stopped)
+                    pending[future] = frame
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                completed = [(pending.pop(future), future.result()) for future in done]
+            for frame, result in completed:
+                frame.summary = result.summary
+                frame.remaining_children = len(result.children)
+                ready.extend(DirectoryFrame(path=child, parent=frame) for child in result.children)
+                yield frame, result.stats
+    finally:
+        stopped.set()
+        if executor is not None:
+            # Cancel queued work; active workers stop between filesystem operations.
+            executor.shutdown(wait=True, cancel_futures=True)
 
 
 def scan_filesystem(
@@ -187,8 +275,8 @@ def scan_filesystem(
 ) -> dict:
     """Return a report. Rollups exclude the scan root and incomplete subtrees."""
     options = options if options is not None else ScanOptions()
-    root = Path(os.path.abspath(Path(path).expanduser()))
-    info = root.lstat()
+    root = os.path.abspath(Path(path).expanduser())
+    info = os.lstat(root)
     if is_link(info) or not stat.S_ISDIR(info.st_mode):
         raise ValueError(f"Scan path must be a directory, not a link: {root}")
     started = time.perf_counter()
@@ -202,23 +290,23 @@ def scan_filesystem(
             cutoff = float("-inf")
     stats = FilesystemStats()
     root_frame = DirectoryFrame(root)
-    stack = [root_frame]
     candidates = []
-    while stack:
-        frame = stack[-1]
-        if frame.children is None:
-            inspect_directory(frame, stats, options)
-        if frame.next_child < len(frame.children):
-            child = frame.children[frame.next_child]
-            frame.next_child += 1
-            stack.append(DirectoryFrame(child))
-            continue
-        # Children have all finished; eligibility now depends only on this subtree.
-        if cutoff is not None and frame.path != root and frame.summary.status(cutoff) == "stale":
-            candidates.append(str(frame.path))
-        stack.pop()
-        if stack:
-            stack[-1].summary.include_child(frame.summary)
+    with closing(scan_directories(root_frame, options)) as directories:
+        for frame, local_stats in directories:
+            stats.merge(local_stats, options)
+            # Finalize a subtree only after every child has finished, regardless of order.
+            while frame is not None and frame.remaining_children == 0:
+                if (
+                    cutoff is not None
+                    and frame.path != root
+                    and frame.summary.status(cutoff) == "stale"
+                ):
+                    candidates.append(frame.path)
+                parent = frame.parent
+                if parent is not None:
+                    parent.summary.include_child(frame.summary)
+                    parent.remaining_children -= 1
+                frame = parent
     stats.finish(options)
     stats.stats["ScanComplete"] = root_frame.summary.complete
     if cutoff is not None:
@@ -404,6 +492,13 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Measure Python memory allocations during the scan",
     )
+    parser.add_argument(
+        "--workers",
+        type=positive_integer,
+        default=1,
+        metavar="N",
+        help="Scan up to N directories concurrently (default: 1)",
+    )
     time_group = parser.add_mutually_exclusive_group()
     time_group.add_argument(
         "-a",
@@ -443,6 +538,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         top_file_count=args.top_file_count,
         size_histogram=args.size_histogram,
         exclusions=tuple(args.exclude),
+        workers=args.workers,
     )
     owns_tracing = args.profile_memory and not tracemalloc.is_tracing()
     if owns_tracing:
