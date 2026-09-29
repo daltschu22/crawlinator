@@ -1,376 +1,496 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+"""Inspect filesystem sizes and find fully inspected, stale subdirectories."""
 
-import os
+from __future__ import annotations
+
 import argparse
-import pprint
-import time
-import datetime
-import checkpyversion
-import bisect
+import copy
+import fnmatch
+import heapq
 import json
+import os
+import pprint
+import re
+import stat
+import sys
+import tempfile
+import time
 import tracemalloc
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Sequence
 
-pp = pprint.PrettyPrinter(indent=4)
+SECONDS_PER_DAY = 86_400
+TIME_NAMES = {"a": "access", "m": "modification", "c": "metadata change"}
+SIZE_UNITS = ("Bytes", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB")
 
-epoch_one_day = 86400
-current_epoch = time.time()
-todays_date = datetime.datetime.today()
 
-tracemalloc.start()
+@dataclass(frozen=True)
+class ScanOptions:
+    days_old: int | None = None
+    use_time: str = "m"
+    top_file_count: int | None = None
+    size_histogram: bool = False
+    exclusions: tuple[str, ...] = ()
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Find stale dirs")
-    parser.add_argument('path', metavar='/filesysem/path', help="Filesystem path")
-    parser.add_argument('-f', dest='human_friendly', action='store_true', help="Display sizes/times in a human friendly manner")
-    parser.add_argument('--old-rollup', action='store', type=int, dest='days_old', metavar='x days', help='Scan filesystem for directories with files older than # of days')
-    parser.add_argument('--size-histogram', action='store_true', help="Display sizes of files in a histogram")
-    parser.add_argument('--suppress-failures', action='store_true', help="Supress failures from the output")
-    parser.add_argument('--top-files', action='store', type=int, nargs='?', const=10, dest='top_file_count', metavar='x largest files', help='Return the x largest files in the scan')
-    parser.add_argument('--save-rollup', action='store', type=str, dest='output_rollup_path', metavar='/path/to/save/json', help='Path to save rollup list into')
-    parser.add_argument('--save-rollup-human-readable', action='store', type=str, dest='output_rollup_path_human_readable', metavar='/path/to/save/list', help='Path to save rollup list into')
+    def __post_init__(self):
+        for name in ("days_old", "top_file_count"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, int) or value <= 0):
+                raise ValueError(f"{name} must be a positive integer")
+        if self.use_time not in TIME_NAMES:
+            raise ValueError("use_time must be 'a', 'm', or 'c'")
 
-    time_group = parser.add_mutually_exclusive_group()
-    time_group.add_argument('-m', dest='use_m_time', action='store_true', help="Use m_time instead of a_time")
-    time_group.add_argument('-c', dest='use_c_time', action='store_true', help="Use c_time instead of a_time")
 
-    return parser.parse_args()
+@dataclass
+class DirectorySummary:
+    complete: bool = True
+    newest_time: float | None = None
+
+    def include_time(self, timestamp: float):
+        if self.newest_time is None or timestamp > self.newest_time:
+            self.newest_time = timestamp
+
+    def include_child(self, child: DirectorySummary):
+        self.complete = self.complete and child.complete
+        if child.newest_time is not None:
+            self.include_time(child.newest_time)
+
+    def status(self, cutoff: float) -> str:
+        if not self.complete:
+            return "unknown"
+        if self.newest_time is None:
+            return "empty"
+        return "stale" if self.newest_time <= cutoff else "active"
+
+
+@dataclass
+class DirectoryFrame:
+    path: Path
+    summary: DirectorySummary = field(default_factory=DirectorySummary)
+    children: list[Path] | None = None
+    next_child: int = 0
 
 
 class FilesystemStats:
-    #Class to hold filesystem stats
+    """Aggregate inspected files without retaining every file's metadata."""
 
     def __init__(self):
-        self.stats = {}
+        self.stats = {
+            "TotalFiles": 0,
+            "TotalSize": 0,
+            "TotalDirs": 0,
+            "DiscoveredEntries": 0,
+            "OldestFile": {"Path": None, "Age": None},
+            "NewestFile": {"Path": None, "Age": None},
+            "Failures": [],
+            "FailureCount": 0,
+            "SkippedEntries": {"Excluded": 0, "Symlinks": 0, "SpecialFiles": 0},
+            "LargestFiles": [],
+            "ScanComplete": True,
+            "ExecutionTime": None,
+        }
+        self._largest: list[tuple[int, str]] = []
+        self._histogram: dict[int, int] = {}
 
-        self.stats["TotalFiles"] = 0
-        self.stats["TotalSize"] = 0
-        self.stats["TotalDirs"] = 1
-        self.stats["OldestFile"] = {"Path": None, "Age": None}
-        self.stats["NewestFile"] = {"Path": None, "Age": None}
-        self.stats["Failures"] = []
-        self.stats["LargestFiles"] = []
-        self.stats["ExecutionTime"] = None
+    def record_failure(self, path: Path, operation: str, error: OSError):
+        self.stats["Failures"].append(
+            {
+                "Path": str(path),
+                "Operation": operation,
+                "Error": str(error),
+                "Errno": error.errno,
+            }
+        )
+        self.stats["FailureCount"] += 1
 
-
-    def update_oldestfile(self, file_time, full_file_path):
-        #Check the current file against the running oldest file
-        if self.stats["OldestFile"]["Age"] == None:
-            self.stats["OldestFile"]["Age"] = file_time
-            self.stats["OldestFile"]["Path"] = full_file_path
-
-        if self.stats["OldestFile"]["Age"] > file_time:
-            self.stats["OldestFile"]["Age"] = file_time
-            self.stats["OldestFile"]["Path"] = full_file_path
-
-
-    def update_newestfile(self, file_time, full_file_path):
-        #Check the current file against the running newest file
-        if self.stats["NewestFile"]["Age"] == None:
-            self.stats["NewestFile"]["Age"] = file_time
-            self.stats["NewestFile"]["Path"] = full_file_path
-
-        if self.stats["NewestFile"]["Age"] < file_time:
-            self.stats["NewestFile"]["Age"] = file_time
-            self.stats["NewestFile"]["Path"] = full_file_path
-
-
-    def update_sizehistogram(self, current_file_size):
-        if "SizeHistogram" in self.stats:
-            human_readable_size_list = convert_size_human_friendly(current_file_size)
-            self.histogram_dict_parse(human_readable_size_list)
-
-
-    def histogram_dict_parse(self, list_of_size):
-    # Convert size to a multiple of 2, then add a counter to the entry in the dictionary that corresponds
-    # size_in_human = list_of_size[0]
-        size_human_int = round(list_of_size[0])
-        size_suffix_str = str(list_of_size[1])
-
-        if size_suffix_str == 'Byte' or size_suffix_str == 'Bytes':
-            if "1KB" not in self.stats["SizeHistogram"]:
-                self.stats["SizeHistogram"]["1KB"] = 1
+    def record_file(self, path: Path, info: os.stat_result, options: ScanOptions) -> float:
+        timestamp = getattr(info, f"st_{options.use_time}time")
+        self.stats["TotalFiles"] += 1
+        self.stats["TotalSize"] += info.st_size
+        for key, older in (("OldestFile", True), ("NewestFile", False)):
+            current = self.stats[key]["Age"]
+            if current is None or (timestamp < current if older else timestamp > current):
+                self.stats[key] = {"Path": str(path), "Age": timestamp}
+        if options.top_file_count is not None:
+            item = (info.st_size, str(path))
+            if len(self._largest) < options.top_file_count:
+                heapq.heappush(self._largest, item)
             else:
-                self.stats["SizeHistogram"]["1KB"] += 1
-        else:
-            size_rounded_pow = 1 << (size_human_int - 1).bit_length() #Black magic to find nearest power of 2
-            size_rounded_with_suffix = str(size_rounded_pow) + size_suffix_str
+                heapq.heappushpop(self._largest, item)
+        if options.size_histogram:
+            # Inclusive upper bounds, computed before any unit conversion.
+            bound = max(1024, 1 << max(0, info.st_size - 1).bit_length())
+            self._histogram[bound] = self._histogram.get(bound, 0) + 1
+        return timestamp
 
-            if size_rounded_with_suffix not in self.stats["SizeHistogram"]:
-                self.stats["SizeHistogram"][size_rounded_with_suffix] = 1
-            elif size_rounded_with_suffix in self.stats["SizeHistogram"]:
-                self.stats["SizeHistogram"][size_rounded_with_suffix] += 1
-
-
-    def check_largest_size(self, current_file_size, full_file_path, limit):
-        #Figure out the list of the top X files
-        # if len(stats["LargestFiles"]) < kwargs["LargestFilesNum"]:
-            # print("LESS THEN!", len(stats["LargestFiles"]))
-
-        file_size_tuple = (current_file_size, full_file_path)
-        if len(self.stats["LargestFiles"]) == 0:
-            self.stats["LargestFiles"].insert(0, file_size_tuple)
-
-        bisect_num = bisect.bisect(self.stats["LargestFiles"], file_size_tuple)
-
-        self.stats["LargestFiles"].insert(bisect_num, file_size_tuple)
-
-        if len(self.stats["LargestFiles"]) == limit:
-            self.stats["LargestFiles"].pop(0)
+    def finish(self, options: ScanOptions):
+        self.stats["LargestFiles"] = sorted(self._largest, key=lambda item: (-item[0], item[1]))
+        if options.size_histogram:
+            self.stats["SizeHistogram"] = {
+                size_bucket_label(bound): count for bound, count in sorted(self._histogram.items())
+            }
 
 
-def walk_error(os_error, stats_object): #Garbage to get failures working because os.walk is janky
-    # error = {os_error: os_error.filename}
-    stats_object.stats["Failures"].append(os_error)
+def is_link(info: os.stat_result) -> bool:
+    """Also skip Windows junctions and other reparse points."""
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
 
 
-def walk_dirs(stats_object, data={}, **kwargs):
-    for root, dirs, files in os.walk(data["path"], onerror=lambda err: walk_error(err, stats_object)):
-
-        list_of_dirs = []
-        data["dirs"] = []
-
-        if "days_old" in kwargs:
-            data["old"] = True
-
-        if not files and not dirs:
-            data["old"] = False
+def inspect_directory(frame: DirectoryFrame, stats: FilesystemStats, options: ScanOptions):
+    """Read one directory, closing its iterator before visiting its children."""
+    frame.children = []
+    try:
+        # Recheck queued directories in case they were replaced during the scan.
+        info = frame.path.lstat()
+        if is_link(info):
+            stats.stats["SkippedEntries"]["Symlinks"] += 1
+            frame.summary.complete = False
             return
-
-        if files:
-            # tmp_file_list = []
-            for file in files:
-                full_file_path = os.path.join(root, file)
-
-                # Filter out Thumbs.db and dotfiles
-                lower_file = file.lower()
-                if lower_file.startswith('thumbs.db') or lower_file.startswith('desktop.ini') or lower_file.startswith('.'):
+        if not stat.S_ISDIR(info.st_mode):
+            raise NotADirectoryError(f"Directory changed during scan: {frame.path}")
+        with os.scandir(frame.path) as entries:
+            stats.stats["TotalDirs"] += 1
+            for entry in entries:
+                stats.stats["DiscoveredEntries"] += 1
+                path = Path(entry.path)
+                if any(fnmatch.fnmatchcase(entry.name, pattern) for pattern in options.exclusions):
+                    stats.stats["SkippedEntries"]["Excluded"] += 1
+                    frame.summary.complete = False
                     continue
-
-                stats_object.stats["TotalFiles"] += 1
                 try:
-                    stat_info = os.stat(full_file_path)
-                except Exception as e:
-                    error_dict = {e: full_file_path}
-                    stats_object.stats["Failures"].append(error_dict)
+                    info = entry.stat(follow_symlinks=False)
+                except OSError as error:
+                    stats.record_failure(path, "stat", error)
+                    frame.summary.complete = False
                     continue
-
-                file_stats = {full_file_path: full_file_path, "StatInfo": stat_info}  # Get stats of the file
-
-                # Determine which time value to use for oldest/newest files
-                use_time = kwargs.get('use_time')
-                if use_time == 'c':
-                    file_time = file_stats["StatInfo"].st_ctime
-                if use_time == 'm':
-                    file_time = file_stats["StatInfo"].st_mtime
-                if use_time == 'a':
-                    file_time = file_stats["StatInfo"].st_atime
-
-                stats_object.update_oldestfile(file_time, full_file_path)
-                stats_object.update_newestfile(file_time, full_file_path)
-
-                current_file_size = file_stats["StatInfo"].st_size  # Get current file size
-                stats_object.stats["TotalSize"] += current_file_size  # Add to the running size total
-
-                if kwargs.get("LargestFilesNum"):
-                    stats_object.check_largest_size(current_file_size, full_file_path, kwargs.get("LargestFilesNum"))
-
-                stats_object.update_sizehistogram(current_file_size)
-
-                if "days_old" in kwargs:
-                    file_days_old = ((current_epoch - file_time) / 86400)  # Get the age of the file in days
-                    if file_days_old < kwargs.get("days_old"):
-                        data["old"] = False
-
-                # tmp_file_list.append(file_stats) #Are these needed?
-            # data["files"] = tmp_file_list #Are these needed?
-
-        if dirs:
-            for d in dirs:
-                stats_object.stats["TotalDirs"] += 1
-
-                tmp_dict = {}
-                tmp_dict["path"] = os.path.join(root, d)
-                tmp_dict["dirs"] = []
-
-                if "days_old" in kwargs:
-                    tmp_dict["old"] = True
-
-                walk_dirs(stats_object, tmp_dict, **kwargs)
-
-                if "old" in tmp_dict and not tmp_dict["old"]:
-                    data["old"] = False
-
-                list_of_dirs.append(tmp_dict)
-                data["dirs"] = list_of_dirs
-
-                if "old" in data and data["old"]:
-                    stats_object.stats["ArchiveableDirs"].append(tmp_dict["path"])
-
-        break
+                if is_link(info):
+                    stats.stats["SkippedEntries"]["Symlinks"] += 1
+                    frame.summary.complete = False
+                elif stat.S_ISDIR(info.st_mode):
+                    frame.children.append(path)
+                elif stat.S_ISREG(info.st_mode):
+                    frame.summary.include_time(stats.record_file(path, info, options))
+                else:
+                    stats.stats["SkippedEntries"]["SpecialFiles"] += 1
+                    frame.summary.complete = False
+    except OSError as error:
+        stats.record_failure(frame.path, "read directory", error)
+        frame.summary.complete = False
 
 
-def convert_size_human_friendly(size):
-    # Return the given bytes as a human friendly KB, MB, GB, or TB string
-    B = float(size)
-    KB = float(1024)
-    MB = float(KB ** 2) # 1,048,576
-    GB = float(KB ** 3) # 1,073,741,824
-    TB = float(KB ** 4) # 1,099,511,627,776
-
-    size_list = []
-
-    if B < KB:
-        size_list.insert(0, B)
-        size_list.insert(1, '{0}'.format('Bytes' if 0 == B > 1 else 'Byte'))
-    elif KB <= B < MB:
-        size_list.insert(0, B/KB)
-        size_list.insert(1, 'KiB')
-    elif MB <= B < GB:
-        size_list.insert(0, B/MB)
-        size_list.insert(1, 'MiB')
-    elif GB <= B < TB:
-        size_list.insert(0, B/GB)
-        size_list.insert(1, 'GiB')
-    elif TB <= B:
-        size_list.insert(0, B/TB)
-        size_list.insert(1, 'TiB')
-
-    return size_list
-
-
-def convert_seconds_human_friendly(seconds):
-    # Return a seconds value as a datetime formatted string
-    mod_timestamp = datetime.datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
-
-    return mod_timestamp
-
-
-def check_read_perms(path):
-    access = os.access(path, os.R_OK)
-
-    return access
-
-
-def filter_children_paths(path_list):
-    """ Iterate through list of paths and remove any extraneous ones."""
-    # Sort list
-    sorted_path_list = sorted(path_list)
-
-    i = 0
-    while i < len(sorted_path_list):
-        if i == (len(sorted_path_list) - 1):
-            break
-        if '{}/'.format(sorted_path_list[i]) in '{}/'.format(sorted_path_list[i+1]):
-            print("DELETING {}".format(sorted_path_list[i+1]))
-            del sorted_path_list[i+1]
-        else:
-            i += 1
-
-    return sorted_path_list
+def scan_filesystem(
+    path: str | Path, options: ScanOptions | None = None, *, now: float | None = None
+) -> dict:
+    """Return a report. Rollups exclude the scan root and incomplete subtrees."""
+    options = options if options is not None else ScanOptions()
+    root = Path(os.path.abspath(Path(path).expanduser()))
+    info = root.lstat()
+    if is_link(info) or not stat.S_ISDIR(info.st_mode):
+        raise ValueError(f"Scan path must be a directory, not a link: {root}")
+    started = time.perf_counter()
+    scan_time = time.time() if now is None else now
+    cutoff = None
+    if options.days_old is not None:
+        try:
+            cutoff = scan_time - options.days_old * SECONDS_PER_DAY
+        except OverflowError:
+            # No finite filesystem timestamp can be older than this threshold.
+            cutoff = float("-inf")
+    stats = FilesystemStats()
+    root_frame = DirectoryFrame(root)
+    stack = [root_frame]
+    candidates = []
+    while stack:
+        frame = stack[-1]
+        if frame.children is None:
+            inspect_directory(frame, stats, options)
+        if frame.next_child < len(frame.children):
+            child = frame.children[frame.next_child]
+            frame.next_child += 1
+            stack.append(DirectoryFrame(child))
+            continue
+        # Children have all finished; eligibility now depends only on this subtree.
+        if cutoff is not None and frame.path != root and frame.summary.status(cutoff) == "stale":
+            candidates.append(str(frame.path))
+        stack.pop()
+        if stack:
+            stack[-1].summary.include_child(frame.summary)
+    stats.finish(options)
+    stats.stats["ScanComplete"] = root_frame.summary.complete
+    if cutoff is not None:
+        stats.stats["RollupStatus"] = root_frame.summary.status(cutoff)
+        stats.stats["ArchiveableDirs"] = sorted(candidates)
+        stats.stats["ArchiveableDirsFixed"] = filter_children_paths(candidates)
+    stats.stats["ExecutionTime"] = round(time.perf_counter() - started, 5)
+    return stats.stats
 
 
-def write_object_to_json_file(object_to_json, input_path, path_to_save, use_time):
-    """Save the list of directories that match the old_rollup criteria to a json object in a defined path."""
-    todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
+def filter_children_paths(path_list: Sequence[str]) -> list[str]:
+    """Keep only outermost candidates, comparing whole path components."""
+    paths = {Path(os.path.abspath(path)) for path in path_list}
+    retained: set[Path] = set()
+    for path in sorted(paths, key=lambda item: (len(item.parts), str(item))):
+        if not any(parent in retained for parent in path.parents):
+            retained.add(path)
+    return sorted(str(path) for path in retained)
 
-    if os.path.exists(path_to_save):
-        dir_path = os.path.join(path_to_save, '')
-        input_path_under = input_path.replace('/', '_')
-        filename_to_save = '{}_old_rollup_{}time_{}.json'.format(input_path_under, use_time, todays_date_formatted)
-        path_with_file = '{}{}'.format(dir_path, filename_to_save)
-        with open(path_with_file, 'w') as outfile:
-            json.dump(object_to_json, outfile)
 
-def write_files_human_readable(json_object, input_path, path_to_save, use_time):
-    """Save the list of directories that match the old_rollup criteria to a human readable file."""
-    todays_date_formatted = todays_date.strftime("%Y-%m-%d-%H-%M-%S")
+def convert_size_human_friendly(size: int) -> list:
+    if size < 1024:
+        return [size, "Byte" if size == 1 else "Bytes"]
+    value = float(size)
+    for unit in SIZE_UNITS[1:]:
+        value /= 1024
+        if value < 1024 or unit == SIZE_UNITS[-1]:
+            return [value, unit]
+    raise ValueError("Invalid file size")
 
-    if os.path.exists(path_to_save):
-        dir_path = os.path.join(path_to_save, '')
-        input_path_under = input_path.replace('/', '_')
-        filename_to_save = '{}_old_rollup_human_readable_{}time_{}.txt'.format(input_path_under, use_time, todays_date_formatted)
-        path_with_file = '{}{}'.format(dir_path, filename_to_save)
-        with open(path_with_file, 'w') as outfile:
-            for path in json_object:
-                outfile.write('{}\n'.format(path))
 
-def main():
-    args = parse_arguments()  # Parse arguments
+def size_bucket_label(bound: int) -> str:
+    value, unit = convert_size_human_friendly(bound)
+    return f"{value:g}{unit}"
 
-    og_path = args.path
-    human_friendly = args.human_friendly
 
-    path_perms = check_read_perms(og_path)
-    if not path_perms:
-        print("ERROR: You dont have permission, or that path doesnt exist!")
-        exit()
+def convert_seconds_human_friendly(seconds: float) -> str:
+    try:
+        return datetime.fromtimestamp(seconds, timezone.utc).isoformat(timespec="seconds")
+    except (OverflowError, OSError, ValueError):
+        # Some filesystems allow timestamps outside datetime's supported range.
+        return f"{seconds} (Unix timestamp)"
 
-    if args.use_c_time:
-        print("Using C_TIME")
-        use_time = 'c'
-    elif args.use_m_time:
-        print("Using M_TIME")
-        use_time = 'm'
-    else:
-        print("Using default A_TIME")
-        use_time = 'a'
 
-    data = {}
-    data["path"] = og_path
+def format_results(
+    stats: dict, *, human_friendly: bool = False, suppress_failures: bool = False
+) -> dict:
+    result = copy.deepcopy(stats)
+    if human_friendly:
+        for key in ("OldestFile", "NewestFile"):
+            timestamp = result[key]["Age"]
+            if timestamp is not None:
+                result[key]["Age"] = convert_seconds_human_friendly(timestamp)
+        result["HumanFriendlyTotalSize"] = convert_size_human_friendly(result["TotalSize"])
+        result["LargestFiles"] = [
+            (convert_size_human_friendly(size), path) for size, path in result["LargestFiles"]
+        ]
+    if suppress_failures:
+        result["Failures"] = "Suppressed; see FailureCount"
+    return result
 
-    stats_object = FilesystemStats()
 
-    if args.days_old:
-        if args.days_old == 0:
-            print("ERROR: You must define a number of days greater than 0!")
-            exit()
-        stats_object.stats["ArchiveableDirs"] = []
+def write_rollup(
+    paths: Sequence[str],
+    input_path: str | Path,
+    destination: str | Path,
+    use_time: str,
+    *,
+    human_readable: bool = False,
+) -> Path:
+    """Publish a complete UTF-8 export with a unique, portable filename."""
+    destination = Path(destination)
+    if not destination.is_dir():
+        raise NotADirectoryError(f"Output directory does not exist: {destination}")
+    source_name = re.sub(r"[^A-Za-z0-9._-]", "_", Path(input_path).name)[:64] or "root"
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S-%f")
+    label = "old_rollup_human_readable" if human_readable else "old_rollup"
+    prefix = f"{source_name}_{label}_{use_time}time_{stamp}_"
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            errors="backslashreplace",
+            dir=destination,
+            prefix=f".{prefix}",
+            suffix=".tmp",
+            delete=False,
+        ) as output:
+            temporary_path = Path(output.name)
+            if human_readable:
+                for path in paths:
+                    # Escape line breaks so a filename cannot create extra rows.
+                    output.write(
+                        path.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n") + "\n"
+                    )
+            else:
+                json.dump(list(paths), output, indent=2)
+                output.write("\n")
+        suffix = ".txt" if human_readable else ".json"
+        final_path = destination / (temporary_path.name[1:-4] + suffix)
+        os.replace(temporary_path, final_path)
+        return final_path
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
-    optional_args = {}  # kwargs dictionary for any optional stuff
-    if args.days_old:
-        optional_args["days_old"] = args.days_old
-    if args.size_histogram:
-        size_histogram = {}
-        stats_object.stats["SizeHistogram"] = size_histogram
-    optional_args["use_time"] = use_time
 
-    if args.top_file_count:
-        optional_args["LargestFilesNum"] = args.top_file_count
+def positive_integer(value: str) -> int:
+    try:
+        result = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if result <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return result
 
-    walk_dirs(stats_object, data, **optional_args)  # Recursively walk the filesystem
 
-    if stats_object.stats["TotalFiles"] > 0 and human_friendly:
-        stats_object.stats["OldestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["OldestFile"]["Age"])
-        stats_object.stats["NewestFile"]["Age"] = convert_seconds_human_friendly(stats_object.stats["NewestFile"]["Age"])
-    if stats_object.stats["TotalSize"] and human_friendly:
-        stats_object.stats["HumanFriendlyTotalSize"] = convert_size_human_friendly(stats_object.stats["TotalSize"])
+def existing_directory(value: str) -> Path:
+    try:
+        path = Path(os.path.abspath(Path(value).expanduser()))
+        info = path.stat()
+    except (OSError, RuntimeError, ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+    if not stat.S_ISDIR(info.st_mode):
+        raise argparse.ArgumentTypeError(f"not an existing directory: {path}")
+    return path
 
-    if args.days_old:
-        # Filter out extraneous paths
-        fixed_path_list = filter_children_paths(stats_object.stats["ArchiveableDirs"])
-        stats_object.stats["ArchiveableDirsFixed"] = fixed_path_list
 
-    # Save json to path defined if argument given
-    if args.output_rollup_path:
-        write_object_to_json_file(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path, use_time)
-    if args.output_rollup_path_human_readable:
-        write_files_human_readable(stats_object.stats["ArchiveableDirsFixed"], og_path, args.output_rollup_path_human_readable, use_time)
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Report file sizes and find stale subdirectories.")
+    parser.add_argument("path", type=existing_directory, help="Directory to scan")
+    parser.add_argument(
+        "-f", dest="human_friendly", action="store_true", help="Format sizes and timestamps (UTC)"
+    )
+    parser.add_argument(
+        "--old-rollup",
+        type=positive_integer,
+        dest="days_old",
+        metavar="DAYS",
+        help="Find fully inspected subdirectories with all files at least DAYS old",
+    )
+    parser.add_argument(
+        "--size-histogram", action="store_true", help="Count files by inclusive size upper bounds"
+    )
+    parser.add_argument(
+        "--suppress-failures",
+        action="store_true",
+        help="Hide failure details while preserving their count and exit status",
+    )
+    parser.add_argument(
+        "--top-files",
+        type=positive_integer,
+        nargs="?",
+        const=10,
+        dest="top_file_count",
+        metavar="N",
+        help="Return the N largest files (default: 10)",
+    )
+    parser.add_argument(
+        "--save-rollup",
+        type=existing_directory,
+        dest="output_rollup_path",
+        metavar="DIR",
+        help="Save rollup JSON in an existing directory; requires --old-rollup",
+    )
+    parser.add_argument(
+        "--save-rollup-human-readable",
+        type=existing_directory,
+        dest="output_rollup_path_human_readable",
+        metavar="DIR",
+        help="Save a readable rollup list; requires --old-rollup",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="Skip matching basenames; repeatable and case-sensitive; blocks enclosing rollups",
+    )
+    parser.add_argument(
+        "--profile-memory",
+        action="store_true",
+        help="Measure Python memory allocations during the scan",
+    )
+    time_group = parser.add_mutually_exclusive_group()
+    time_group.add_argument(
+        "-a",
+        dest="use_time",
+        action="store_const",
+        const="a",
+        help="Use access time (depends on filesystem settings)",
+    )
+    time_group.add_argument(
+        "-m",
+        dest="use_time",
+        action="store_const",
+        const="m",
+        help="Use modification time (default)",
+    )
+    time_group.add_argument(
+        "-c",
+        dest="use_time",
+        action="store_const",
+        const="c",
+        help="Use ctime (metadata change on Unix; platform-dependent)",
+    )
+    parser.set_defaults(use_time="m")
+    args = parser.parse_args(argv)
+    if args.days_old is None and (
+        args.output_rollup_path or args.output_rollup_path_human_readable
+    ):
+        parser.error("--save-rollup and --save-rollup-human-readable require --old-rollup DAYS")
+    return args
 
-    # Calculate time it took for script to run
-    end_epoch_time = time.time()
-    total_execution_time = round(end_epoch_time - current_epoch, 5)
-    stats_object.stats["ExecutionTime"] = total_execution_time
 
-    current, peak = tracemalloc.get_traced_memory()
-    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
-    
-    # Temporary print (Will make a dedicated results printing function later)
-    if args.suppress_failures:
-        stats_object.stats["Failures"] = "Suppressed!"
-        pp.pprint(stats_object.stats)
-    else:
-        pp.pprint(stats_object.stats)
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_arguments(argv)
+    options = ScanOptions(
+        days_old=args.days_old,
+        use_time=args.use_time,
+        top_file_count=args.top_file_count,
+        size_histogram=args.size_histogram,
+        exclusions=tuple(args.exclude),
+    )
+    owns_tracing = args.profile_memory and not tracemalloc.is_tracing()
+    if owns_tracing:
+        tracemalloc.start()
+    try:
+        stats = scan_filesystem(args.path, options)
+        if args.profile_memory:
+            current, peak = tracemalloc.get_traced_memory()
+            stats["MemoryBytes"] = {"Current": current, "Peak": peak}
+        print(f"Using {TIME_NAMES[args.use_time]} time")
+        pprint.pprint(
+            format_results(
+                stats,
+                human_friendly=args.human_friendly,
+                suppress_failures=args.suppress_failures,
+            ),
+            sort_dicts=False,
+        )
+        for destination, human_readable in (
+            (args.output_rollup_path, False),
+            (args.output_rollup_path_human_readable, True),
+        ):
+            if destination is not None:
+                saved = write_rollup(
+                    stats["ArchiveableDirsFixed"],
+                    args.path,
+                    destination,
+                    args.use_time,
+                    human_readable=human_readable,
+                )
+                print(f"Saved rollup to {saved}")
+        if stats["FailureCount"]:
+            print(
+                f"ERROR: Scan encountered {stats['FailureCount']} filesystem error(s); results are partial.",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+    except (OSError, ValueError, UnicodeError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("Scan interrupted.", file=sys.stderr)
+        return 130
+    finally:
+        if owns_tracing:
+            tracemalloc.stop()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
